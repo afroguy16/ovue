@@ -24,8 +24,6 @@ The service must:
 - support acknowledgement of individual deliveries;
 - allow the operator to inspect pointer traffic.
 
-Keep the service small: one server, with no framework beyond what is needed. It should support local use or an inexpensive host subject to the deployment requirements below. Supply one package README with setup instructions and curl examples for every HTTP endpoint. The operator must be able to open a view of all pointer traffic; the local CLI traffic-log reader satisfies this in version one.
-
 The service must not:
 
 - start or wake agent sessions;
@@ -34,8 +32,6 @@ The service must not:
 - depend on Codex, Claude, Antigravity, or another agent provider.
 
 ## 3. Package and module boundaries
-
-Ovue is a standalone Python project in its own public repository. The project root contains packaging and project documents; the inner `ovue/` directory is the importable Python package. Irúo is a separate project that may use Ovue through its public interfaces.
 
 Ovue owns its contract, message use cases, storage, authentication, and transports inside its package. Its behavior is split by responsibility; no single service file should own all HTTP actions, persistence, and token rules. The tree below describes these boundaries, not a requirement to combine each responsibility into one file. Tests live beside the code they exercise.
 
@@ -102,9 +98,9 @@ The service rejects pointers with missing required fields, an empty `to` array, 
 
 The `ref` object and its `url` are required. The URL must be absolute HTTPS. HTTP is allowed only for the exact hostname `localhost` on a local deployment. Schemes such as `javascript:`, `data:`, and `file:` are rejected.
 
-The URL must not contain userinfo, a query string, a fragment, an IP literal, an IDN/punycode hostname, a trailing-dot hostname, or a non-default port. URL parsing must use a standards-compliant parser; hostname comparison lowercases the hostname. Allowlist entries are exact hosts; a subdomain requires its own allowlist entry.
+The URL must not contain userinfo, a query string, a fragment, an IP literal, an IDN/punycode hostname, a trailing-dot hostname, or a non-default port. URL parsing must use a standards-compliant parser; hostname comparison lowercases the hostname. Allowlist entries are exact hosts; a subdomain requires its own allowlist entry. The query-string or fragment validation issue must say `Remove the query string or fragment from the URL`.
 
-The service never fetches, follows, previews, or redirects to a `ref.url`. The URL path is public reference data and must never contain credentials, secrets, or confidential instructions. The service does not attempt to detect every secret in paths. The sender supplies the reference. If there is no specific card, the agent uses a known protocol or project-page URL from its brief. The service does not hard-code Notion or any other external system.
+The service never fetches, follows, previews, or redirects to a `ref.url`. Clients must not follow a redirect to a host outside the configured allowlist. The URL path is public reference data and must never contain credentials, secrets, or confidential instructions. The service does not attempt to detect every secret in paths. The sender supplies the reference. If there is no specific item, the sender uses a known protocol or project-page URL. The service does not hard-code Notion or any other external system.
 
 The service has a configurable allowlist of hosts permitted in `ref.url`. An empty allowlist fails closed for non-localhost URLs.
 
@@ -112,7 +108,7 @@ The service has a configurable allowlist of hosts permitted in `ref.url`. An emp
 
 The optional `ref.title` may contain only printable ASCII letters, digits, spaces, `-`, `_`, `.`, and `#`, and may be at most 12 characters. It is an opaque label and is never interpreted by the service.
 
-`description` is required, must be one line of printable ASCII characters (`U+0020` through `U+007E`), and may be at most 120 characters. This rejects control characters, CR, U+2028, U+2029, bidi controls, zero-width and other format characters, noncharacters, normalization-sensitive text, and visually confusable non-ASCII text.
+`description` is required, must be one line of printable ASCII characters (`U+0020` through `U+007E`), and may be at most 120 characters. This rejects control characters, CR, U+2028, U+2029, bidi controls, zero-width and other format characters, noncharacters, normalization-sensitive text, and visually confusable non-ASCII text. A validation issue for a disallowed character says `printable ASCII only` and never echoes the character.
 
 Every pointer field, including `ref.url`, `ref.title`, `description`, sender metadata, and display names, is untrusted data. A pointer is a notification, not an instruction. Clients visibly mark pointer content as untrusted, render it with safe escaping, and do not treat it as executable instructions. A receiving agent may act only when the referenced item is assigned to that seat; before an irreversible action, it independently checks assignment and authorization and inspects the referenced system.
 
@@ -173,7 +169,7 @@ The default inbox response returns pointers with their `state`. `unread=1` filte
 
 `unread=0` returns pointers whose deliveries have `state: read`. Omitting the filter returns both states. Terminal processing is a receiving-client obligation: the acknowledgement endpoint alone cannot prove that a client's local action succeeded. If completion was recorded locally but acknowledgement was interrupted, the client retries acknowledgement without repeating the completed action.
 
-Inbox responses are paginated and have a configurable maximum page size.
+Inbox responses use an opaque cursor and have the shape `{items, next_cursor}`. The default page limit is 50 items and the maximum is 100. A missing or null `next_cursor` means there are no more pages.
 
 ### Error contract
 
@@ -200,11 +196,21 @@ Other top-level error codes are:
 unauthorized       401
 forbidden          403
 not_found          404
+replay_unavailable 409
 payload_too_large  413
 rate_limited       429, with retry_after_seconds
 ```
 
-`POST /ack/{delivery-id}` returns the same `404 not_found` response when the delivery does not exist or belongs to another seat. This prevents delivery-ID probing. `/inbox/{seat-id}` and `/stream/{seat-id}` return `403 forbidden` when another seat's ID is requested. Unavailable replay uses HTTP `409`; the public error code and cursor boundary rules remain open under U1 in section 15.
+`POST /ack/{delivery-id}` returns the same `404 not_found` response when the delivery does not exist or belongs to another seat. This prevents delivery-ID probing. `/inbox/{seat-id}` and `/stream/{seat-id}` return `403 forbidden` when another seat's ID is requested. An unavailable replay returns HTTP `409` with this body:
+
+```json
+{
+  "error": "replay_unavailable",
+  "message": "Recover via GET /inbox/{seat-id}?unread=1"
+}
+```
+
+Error responses never echo submitted values.
 
 ## 6. Delivery flow
 
@@ -239,7 +245,7 @@ A seat may hold multiple stream connections subject to configured per-seat and g
 
 The stream must be consumable with `curl -N`. Each event carries one single-line JSON object in its `data:` field, alongside the SSE `id:` and event-separating blank line. Heartbeat comments are not message events.
 
-If `Last-Event-ID` is malformed or negative, the service returns `400 validation_failed`. If the requested replay is no longer retained, it returns HTTP `409`; the client recovers through the paginated inbox. The distinction between other out-of-range cursors and expired replay, and the exact 409 payload, remain open under U1. Replay size is bounded; its truncation or continuation behavior must be defined under U5 before implementation.
+If `Last-Event-ID` is malformed, negative, or ahead of the newest event, the service returns `400 validation_failed`. If the cursor is older than the retained replay, or the backlog exceeds the replay limit of 1,000 events, the service returns the `409 replay_unavailable` response defined in section 5. The client recovers through the paginated inbox.
 
 If a seat cannot hold a connection, it polls:
 
@@ -257,14 +263,13 @@ A send is one atomic transaction covering pointer creation, every recipient deli
 
 The database and traffic log are sensitive. On local installations, their parent directory is owned by the operator with mode `0700`, and files use mode `0600`. Backups and exports inherit the same access requirements. At-rest encryption is required when the underlying disk or backup location is not already encrypted.
 
-Every deployment must configure finite maximums for stored pointer records and database bytes. The local MVP may retain pointers until a finite limit is reached but may not use unbounded storage. The service warns the operator at 80% of either limit. When its capacity precheck determines that a send would exceed either limit, it rejects the send before mutation with `429 rate_limited`. Existing pointers remain accessible through inboxes and streams, and acknowledgements remain available. Non-local deployment requires an explicit finite retention period, a working purge command/process, and protected backups before startup.
+Every deployment must configure finite limits for pointer-row count and logical SQLite database size. The Founder will confirm the default values before the first run; until then, use `FOUNDER_CONFIRM` placeholders and require explicit finite values at startup. The service warns the operator at 80% of either logical limit. The logical database-size measure is `(page_count - freelist_count) * page_size`, using SQLite's `PRAGMA page_count`, `PRAGMA freelist_count`, and `PRAGMA page_size`.
 
-The MVP has two known storage limitations:
+Set `PRAGMA max_page_count` to cap the physical file at 115% of the logical byte limit, rounded up to a whole page. This 15% headroom is reserved for acknowledgements, seat revocation and token rotation, and purge operations; sends are rejected at the logical limit and cannot consume it. These recovery and control operations remain available while the logical send limit is full. Freed pages remain reusable after purge even when SQLite does not shrink the file.
 
-- storage-capacity prechecks may not yet be race-safe under concurrent sends; a production implementation must reserve capacity atomically with message creation or serialize the check and transaction;
-- stored-record and database-byte quotas are global, not per-seat, so one seat may consume shared storage.
+The service checks both limits inside the send transaction, after `BEGIN IMMEDIATE` acquires SQLite's write lock. The transaction includes pointer creation, every recipient delivery, quota accounting, and per-recipient sequence assignment. This serializes concurrent send checks and preserves all-or-nothing pointer creation.
 
-Finite storage configuration and prechecks remain required. Because race-safe reservation was explicitly deferred, the MVP cannot guarantee that concurrent sends never overshoot a configured ceiling. That gap remains a follow-up, not a completed security control. All-or-nothing message creation remains mandatory even when capacity is contested.
+The MVP includes a local admin purge command. It deletes a pointer only when every recipient delivery is acknowledged (`read`) and the pointer is older than the configured retention age. It must never delete a pointer with an unread delivery. The command also trims traffic-log rows older than a separately configured log-retention age. Both ages are configurable; use `FOUNDER_CONFIRM` until the Founder sets their defaults. These deletions free SQLite pages for reuse; an optional `VACUUM` may shrink the physical database file. Non-local deployment also requires protected backups before startup.
 
 The traffic log records `created_at`, pointer ID, delivery ID, `from`, `to`, `ref`, description, kind, and state. It is structured JSON, one event per line. Fields are length-limited and safely escaped; control and directionality characters cannot create extra records or misleading rendering. The log reader renders fields safely and does not interpret URLs, titles, or descriptions as markup or commands. The audit-log reader is restricted to the operator.
 
@@ -283,7 +288,8 @@ The local admin CLI must be able to:
 - send a pointer as `operator`;
 - read the `operator` inbox;
 - acknowledge an `operator` delivery;
-- read the traffic log.
+- read the traffic log;
+- purge eligible pointers.
 
 Rotation also works for a seat whose previous token has been revoked: it issues a new usable token without changing the seat ID. The revoked token remains unusable.
 
@@ -299,7 +305,9 @@ Configure per-seat and global limits for send rate, recipient deliveries, reques
 
 Each registered seat receives a nonzero reservation of at least 1 open stream and 10 unread deliveries. Global stream and unread limits must be at least the number of registered seats multiplied by those reservations; otherwise seat creation or capacity reduction is rejected. A seat may use its reservation and only unused capacity beyond all reservations.
 
-Total stored records and database bytes are global quotas with no per-seat reservations in the MVP. They must always have finite limits. When any quota is exceeded, the service returns `429 rate_limited` with `retry_after_seconds` and does not partially deliver. Capacity checks are known to need race-safe implementation for concurrent sends.
+The global pointer-row and SQLite file-size limits must be finite and configurable. The Founder will confirm the default values before the first run; until then, use `FOUNDER_CONFIRM` placeholders and require explicit finite values at startup. The service warns the operator at 80% of either limit. It checks capacity inside the `BEGIN IMMEDIATE` send transaction, serializing concurrent sends. The MVP has no per-seat storage quota; the operator warning and seat revocation are the controls. A per-sender cap may be added later.
+
+When a recipient already has 100 unread deliveries, a pointer addressed to that recipient is rejected with HTTP `400` and an issue such as `{ "path": ["to", 0], "code": "recipient_inbox_full", "message": "The recipient's inbox is full" }`. This is a temporary condition that clears when the recipient acknowledges a pointer and an unread slot becomes available. It is not a rate-limit response. The unread-capacity check runs inside the same `BEGIN IMMEDIATE` transaction as storage checks and pointer creation. A multi-recipient pointer is all-or-nothing: if any recipient inbox is full, no delivery is created. Purge eligibility and traffic-log retention are defined in section 8.
 
 Any non-local deployment requires HTTPS and rejects startup if a cleartext listener is exposed. TLS must terminate at a trusted boundary with certificate validation and a documented proxy boundary. The proxy forwards only the intended `Authorization` header and strips untrusted identity headers. Browser origins are disabled by default; if enabled, CORS is an explicit allowlist with no wildcard origin or credential sharing. SSE proxy buffering is disabled and idle and total connection timeouts are explicit. The service trusts client identity/address headers only from documented trusted proxies.
 
@@ -309,12 +317,12 @@ Any non-local deployment requires HTTPS and rejects startup if a cleartext liste
 2. Connect Seat A with `curl -N` to its stream.
 3. Send a pointer from Seat B to Seat A.
 4. Confirm Seat A receives it within two seconds.
-5. Disconnect Seat A and send two more messages.
+5. Disconnect Seat A and send two more pointers.
 6. Reconnect with `Last-Event-ID` and confirm both pointers arrive in order with no gaps; any repeat carries the same `delivery_id`.
 7. Send one pointer to two recipients and confirm each has independent delivery state.
 8. Confirm a client-supplied `from` field is rejected.
 9. Confirm HTTP is rejected except for localhost, and `javascript:`, `data:`, and `file:` URLs are rejected.
-10. Confirm missing required fields, an empty `to` array, unsupported kinds, invalid URLs, missing refs, disallowed ref titles, invalid title characters, control characters, over-long descriptions, unknown seats, disallowed hosts, and wrong tokens are rejected clearly.
+10. Confirm missing required fields, an empty `to` array, unsupported kinds, invalid URLs, missing refs, disallowed ref titles, invalid title characters, control characters, over-long descriptions, unknown seats, disallowed hosts, and wrong tokens are rejected clearly. Non-printable description characters return `printable ASCII only` without echoing the character.
 11. Confirm a description of exactly 120 printable ASCII characters is accepted and 121 is rejected.
 12. Confirm a seat cannot send to itself, read another seat's inbox, or acknowledge another seat's delivery.
 13. Confirm more than 10 recipients is rejected and duplicate IDs produce one delivery.
@@ -336,7 +344,7 @@ Any non-local deployment requires HTTPS and rejects startup if a cleartext liste
 29. Confirm acknowledging a nonexistent delivery ID and another seat's delivery ID return the same `404 not_found` response.
 30. Confirm reading or streaming another seat's inbox returns `403 forbidden`.
 31. Deliver a pointer to Seat A, leave it unacknowledged, disconnect, and reconnect; confirm it is sent again with the same `delivery_id` and disappears from the unread backlog after acknowledgement.
-32. Reject URL userinfo, query strings, fragments, IP literals, IDN/punycode hosts, trailing-dot hosts, non-default ports, and malformed absolute URLs. Confirm the service never fetches or follows the reference.
+32. Reject URL userinfo, query strings, fragments, IP literals, IDN/punycode hosts, trailing-dot hosts, non-default ports, and malformed absolute URLs. For query strings and fragments, return `Remove the query string or fragment from the URL`. Confirm the service never fetches or follows the reference.
 33. Confirm an empty host allowlist rejects non-localhost URLs and an explicit allowlist matches canonical exact hosts only.
 34. Reject bidi controls, zero-width characters, format characters, noncharacters, non-ASCII confusables, and normalization-sensitive values in `title` and `description`.
 35. Confirm submitted values are never echoed in errors and tokens never appear in traffic logs, exports, backup tests, or agent transcripts.
@@ -352,16 +360,20 @@ Any non-local deployment requires HTTPS and rejects startup if a cleartext liste
 45. Attempt to create, import, or rename a seat to `operator` and confirm the operation is rejected.
 46. Exhaust one seat's available stream and unread-delivery capacity and confirm another seat retains its reserved stream and unread-delivery slots. Historical-record storage has no per-seat reservation; exhaustion may prevent new sends for all seats while existing inboxes and acknowledgements remain available.
 47. Force failure during each phase of a multi-recipient send and restart; confirm either one complete send or no send, with no partial deliveries or duplicate sequence assignments.
-48. Confirm non-local startup fails without finite retention, a working purge configuration, and protected backups; confirm local MVP may retain until its finite configured limits.
+48. Confirm non-local startup fails without finite retention, a working purge configuration, and protected backups; confirm the local MVP also requires configured finite storage limits and a working purge command.
 49. Register seats until global capacity cannot provide 1 stream and 10 unread-delivery slots per seat; confirm registration or capacity reduction is rejected.
 50. Exercise receiver states through completion, retryable failure, permanent failure, crash-before-action, and crash-after-action; confirm retries do not lose work or repeat non-idempotent actions.
 51. Configure finite record and database-byte limits, reach the 80% warning threshold, and confirm the operator is warned.
-52. With sends executed serially, attempt a send that would exceed either storage limit and confirm rejection before mutation while existing messages remain accessible and acknowledgements remain available. Concurrent ceiling enforcement is deferred.
-53. Confirm the package README explains setup and includes curl examples for send, seat directory, inbox, acknowledgement, and SSE.
-54. Revoke a seat's token, rotate it, and confirm the replacement works while the old token remains invalid.
-55. Confirm `unread=0` returns only read deliveries, `unread=1` returns only unread deliveries, and an omitted filter returns both.
-56. Complete processing durably, interrupt before acknowledgement, reconnect, and confirm acknowledgement can be retried without repeating the action. Verify compliant clients do not acknowledge before terminal processing.
-57. Confirm an SSE event has one single-line JSON `data:` payload and the per-recipient sequence in `id:`, and a client that cannot stream can recover by polling on startup.
+52. Fill storage to its configured limit with pointers and traffic-log rows older than their respective configured retention ages. Run purge and confirm eligible pointers and log rows are deleted, pointers with unread deliveries remain, freed pages are reusable, and a new send succeeds.
+53. Concurrently submit sends at the configured storage limit and confirm `BEGIN IMMEDIATE` prevents the pointer-row and used-page limits from being exceeded, the physical file respects `max_page_count`, and no partial deliveries are created.
+54. Fill a recipient inbox to 100 unread deliveries and concurrently send to that recipient; confirm the transaction returns `recipient_inbox_full` with the inbox-full message and creates no deliveries for any recipient.
+55. Confirm query-string/fragment errors say `Remove the query string or fragment from the URL` and non-printable description errors say `printable ASCII only`, without echoing submitted characters.
+56. Confirm the package README explains setup and includes curl examples for send, seat directory, inbox, acknowledgement, and SSE.
+57. Revoke a seat's token, rotate it, and confirm the replacement works while the old token remains invalid.
+58. Confirm `unread=0` returns only read deliveries, `unread=1` returns only unread deliveries, and an omitted filter returns both.
+59. Complete processing durably, interrupt before acknowledgement, reconnect, and confirm acknowledgement can be retried without repeating the action. Verify compliant clients do not acknowledge before terminal processing.
+60. Confirm an SSE event has one single-line JSON `data:` payload and the per-recipient sequence in `id:`, and a client that cannot stream can recover by polling on startup.
+61. Fill the logical database limit, then acknowledge a delivery, revoke or rotate a seat token, and run purge; confirm each operation succeeds within the reserved physical headroom and the SQLite file remains within `max_page_count`.
 
 Receiver checks 50 and 56 require a compliant receiving client; they cannot be demonstrated by the acknowledgement endpoint alone.
 
@@ -371,12 +383,14 @@ Receiver checks 50 and 56 require a compliant receiving client; they cannot be d
 - The `operator` identity can receive messages; the local admin CLI reads and acknowledges its inbox.
 - Revoking a token closes that seat's open streams immediately.
 - The default inbox includes read deliveries; `unread=1` filters them out.
-- Local retention is bounded by finite record and database-byte limits; no deployment may use unbounded storage.
+- Local retention is bounded by finite pointer-row and SQLite file-size limits. Purge deletes only pointers older than the configured age with all deliveries acknowledged.
 - The local data directory and admin CLI trust the owning OS user.
 - Clients mark messages as untrusted, independently verify assignment and authorization, and inspect the referenced system.
 - The operator's terminal is part of the trust boundary during one-time token display.
 - Recipient IDs in message events and the authenticated seat directory are intentionally visible workflow metadata.
-- Per-seat storage fairness and race-safe concurrent storage reservation are known follow-ups. Finite configured limits, capacity prechecks, and all-or-nothing sends remain required; concurrent overshoot is not yet ruled out.
+- The MVP has no per-seat storage quota. The 80% warning and seat revocation are the controls; a per-sender cap may be added later.
+- Traffic-log rows have a separate configurable retention age and are trimmed by the purge command.
+- Accepted MVP security posture: the service trusts its owning OS user; URL paths are public data; recipient lists and the seat directory are visible to authenticated seats; and free-text descriptions are handled as untrusted content through safe rendering and independent receiver checks.
 
 ## 13. Development and reporting
 
@@ -388,12 +402,6 @@ On delivery, report what works, what was tested, and what could not be tested. D
 
 SQLite is the MVP persistence choice. Redis Streams or NATS JetStream may be considered later when operational requirements justify them. Keep the contract independent of the backend. This is an evaluation direction, not a commitment to build either adapter now; it does not introduce leases, a new agent runtime, or a session-waking feature.
 
-## 15. Open decisions
+## 15. Agent-tool wake-up testing
 
-Resolve these decisions before implementing the affected behavior.
-
-| ID | Decision needed | Established requirements |
-|---|---|---|
-| U1 | Select the HTTP 409 replay error code (`conflict` or `replay_unavailable`) and payload. Define the cursor boundaries for expired versus otherwise invalid sequences. | Malformed and negative cursors return 400; unavailable retained replay returns 409 and clients recover via the inbox. Errors never echo submitted values. |
-| U2 | Define responsibility for detecting and rejecting remote redirects, which cannot be identified from a URL string alone. | The service never fetches or follows references. |
-| U5 | Define pagination response fields/cursors, page defaults, bounded replay continuation, remaining global rate limits, buffer bounds, finite record/byte limits, and how those storage limits are measured. | Section 10 defines the initial defaults and capacity reservations. |
+Test whether each agent tool can be woken by a pointer only after Ovue is live over HTTPS and its domain is allowed in that tool's network settings.
