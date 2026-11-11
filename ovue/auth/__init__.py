@@ -1,1 +1,0 @@
-"""Seat authentication for Ovue."""

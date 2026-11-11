@@ -1,6 +1,6 @@
 # Ovue
 
-Ovue is a Python project for an agent message channel. Its planned contract provides short references to external work, registered seats, durable recipient inboxes, acknowledgements, and SSE delivery across agent tools.
+Ovue is a Python message pointer service. It routes pointers to messages held in external messaging or memory systems. Each pointer includes a reference URL and a short description; Ovue does not host the referenced messages.
 
 The implementation is in progress. The current code includes a CLI help entry point, message validation, and draft service and SQLite modules. HTTP/SSE serving and the administrative workflows still need implementation and acceptance testing.
 
@@ -17,10 +17,6 @@ ovue --help
 
 The package can also be run from the project directory with `python -m ovue --help`.
 
-## Specification documents
+## Specification
 
-- [spec.md](spec.md) contains the earlier reconstructed specification and audit additions.
-- [spec-recovered.md](spec-recovered.md) contains the scratch baseline with the recorded security edits through v6 replayed.
-- [spec-traceability.md](spec-traceability.md) records the earlier reconstruction audit and its unresolved items.
-
-These documents retain their contents from the Irúo project, including historical package paths and boundaries. They require reconciliation before being treated as one final implementation specification.
+See [spec.md](spec.md) for the service contract.
