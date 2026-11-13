@@ -33,7 +33,7 @@ The service must not:
 
 ## 3. Package and module boundaries
 
-Ovue groups business capabilities into modules. The `pointers` module owns pointer use cases and persistence; the `seats` module owns seat identity and authentication. HTTP and CLI are entry points that call these modules. Tests live beside the code they exercise.
+Ovue groups business capabilities into modules. The `pointers` module owns pointer operations and persistence; the `seats` module owns seat identity and authentication. HTTP and CLI are entry points that call these modules. Tests live beside the code they exercise.
 
 ```text
 ovue/                         # standalone project and repository root
@@ -67,7 +67,7 @@ flowchart LR
         end
 
         subgraph Modules["Modules"]
-            Pointer["(c) Pointer use cases<br/>send slice"]
+            Pointer["(c) Pointer operations<br/>send slice"]
             Auth["(d) Seats module<br/>identity and recipient lookup"]
             Store["(e) Pointer persistence<br/>send writes"]
             Log["(f) Traffic log<br/>send records"]
@@ -102,14 +102,14 @@ flowchart LR
 | Box | Responsibility |
 | --- | --- |
 | (a) Agent tool | Sends pointers and receives inbox or stream events through Ovue. |
-| (b) HTTP transport | Converts HTTP requests and SSE connections into calls to pointer use cases, and returns their results. |
-| (c) Pointer use cases | Applies pointer rules for sending, inbox retrieval, replay, acknowledgement, traffic-log access, and purge. |
+| (b) HTTP transport | Converts HTTP requests and SSE connections into calls to pointer operations, and returns their results. |
+| (c) Pointer operations | Applies pointer rules for sending, inbox retrieval, replay, acknowledgement, traffic-log access, and purge. |
 | (d) Seats module | Authenticates seats and resolves recipient identities. |
 | (e) Pointer persistence | Stores pointers, per-recipient deliveries, and event ordering durably. |
 | (f) Traffic log | Records pointer activity for the operator to inspect. |
 | (g) SQLite | Persists pointer, delivery, seat, and traffic-log data. |
 | (h) Operator | Uses Ovue administration capabilities. |
-| (i) Local admin CLI | Exposes operator actions and calls the relevant module use cases. |
+| (i) Local admin CLI | Exposes operator actions and calls the relevant module operations. |
 
 SSE is a delivery mode of the HTTP transport, not a separate system. The agent opens the HTTP connection, and the service sends pointer events back through it. Future transports, such as MCP, call the same modules and do not implement pointer rules themselves.
 
@@ -182,7 +182,7 @@ One pointer has one `pointer_id` and an independent `delivery_id` and `state` fo
 
 SSE events contain one JSON object with the SSE event ID, delivery ID, pointer ID, creation time, sender identity, recipient IDs, reference, description, kind, and state. The receiver must not need another lookup to display a sender such as `From Ese (Writer)`. Recipient IDs in events are intentionally visible workflow metadata to authenticated recipients.
 
-No additional seat metadata is included in the event. The sender identity contains only ID, display name, and role; recipients are represented by IDs.
+No additional seat metadata is included in the event. The sender identity contains only ID, display name, and role; recipients are represented by IDs. Handles are directory metadata and do not replace IDs in pointer events or the message contract.
 
 ## 5. HTTP actions
 
@@ -194,9 +194,11 @@ POST /ack/{delivery-id}
 GET  /stream/{seat-id}
 ```
 
-The sender authenticates with a bearer token in the `Authorization: Bearer <token>` header. Tokens are never accepted in query strings. Every registered seat is assigned a stable ID, display name, role, and one bearer token. A seat may send only as itself and may read only its own inbox and stream. Display names are human-facing metadata; IDs are used by the protocol.
+The sender authenticates with a bearer token in the `Authorization: Bearer <token>` header. Tokens are never accepted in query strings. Every registered seat is assigned a stable ID, handle, display name, role, and one bearer token. A seat may send only as itself and may read only its own inbox and stream. Handles and display names are human-facing metadata; IDs are used by the protocol.
 
-`GET /seats` is read-only and available to any authenticated seat. It returns every registered seat plus the reserved `operator` identity, with IDs, display names, and roles. The operator has ID `operator`, display name `Founder`, and role `operator`. The response never returns tokens or token hashes.
+Handles are unique within one Ovue deployment, compared case-insensitively, and normalized to lowercase. A handle contains 2–32 ASCII letters, digits, underscores, or hyphens; the first character must be a letter or digit. Handles are shown with an `@` prefix in user interfaces and stored without it. The local admin CLI can rename a handle. Renaming does not change the seat ID, token, or existing pointer deliveries. Handles are not credentials.
+
+`GET /seats` is read-only and available to any authenticated seat. It returns every registered seat plus the reserved `operator` identity, with IDs, handles, display names, and roles. The operator has ID `operator`, handle `founder`, display name `Founder`, and role `operator`. The response never returns tokens or token hashes. Agents resolve handles through this directory, then address pointers using seat IDs; `to`, inbox, stream, and acknowledgement contracts continue to use IDs.
 
 Agent-facing HTTP exposes only send, seat directory, inbox, acknowledgement, and stream actions. Administration is performed through a local command-line tool.
 
@@ -320,8 +322,9 @@ Authentication failures are throttled per source and per seat identifier without
 
 The local admin CLI must be able to:
 
-- create a registered seat;
-- list seats and token status;
+- create a registered seat with a unique handle;
+- list seats, handles, and token status;
+- rename a seat handle while keeping its ID stable;
 - revoke a token and close its streams;
 - rotate a seat token, immediately revoking the old token and showing the new token once;
 - send a pointer as `operator`;
@@ -332,7 +335,7 @@ The local admin CLI must be able to:
 
 Rotation also works for a seat whose previous token has been revoked: it issues a new usable token without changing the seat ID. The revoked token remains unusable.
 
-Token administration is an operator capability, not an agent capability. The seat ID `operator` is permanently reserved; seat creation, import, and rename reject it.
+Token and handle administration are operator capabilities, not agent capabilities. The seat ID `operator` and handle `founder` are permanently reserved; seat creation, import, and rename reject attempts to claim either reserved value.
 
 The local admin CLI is restricted to the same operating-system user that owns the service data directory and uses `umask 077`. Raw tokens are displayed only when stdout is an operator-controlled terminal. The local OS user is a trusted boundary; compromise of that user means full service compromise. The terminal, including scrollback and any recording or screen-capture tools, is part of the trust boundary during one-time token display.
 
@@ -367,7 +370,7 @@ Any non-local deployment requires HTTPS and rejects startup if a cleartext liste
 13. Confirm more than 10 recipients is rejected and duplicate IDs produce one delivery.
 14. Confirm a first connection without `Last-Event-ID` receives the unread backlog.
 15. Confirm two open connections for one seat both receive every event.
-16. Confirm `GET /seats` returns every registered seat plus `operator`, with no token or token-hash data.
+16. Confirm `GET /seats` returns every registered seat plus `operator`, including IDs, handles, display names, and roles, with no token or token-hash data.
 17. Confirm a multi-field validation failure returns every issue and no submitted value.
 18. Confirm unread inbox requests return only deliveries with state `unread`.
 19. Acknowledge one delivery twice and confirm the second acknowledgement is harmless.
@@ -413,6 +416,10 @@ Any non-local deployment requires HTTPS and rejects startup if a cleartext liste
 59. Complete processing durably, interrupt before acknowledgement, reconnect, and confirm acknowledgement can be retried without repeating the action. Verify compliant clients do not acknowledge before terminal processing.
 60. Confirm an SSE event has one single-line JSON `data:` payload and the per-recipient sequence in `id:`, and a client that cannot stream can recover by polling on startup.
 61. Fill the logical database limit, then acknowledge a delivery, revoke or rotate a seat token, and run purge; confirm each operation succeeds within the reserved physical headroom and the SQLite file remains within `max_page_count`.
+62. Confirm `GET /seats` returns each seat's handle without returning token data, and handle lookup is case-insensitive.
+63. Attempt to create two seats with handles that differ only by letter case; confirm the duplicate is rejected.
+64. Rename a seat handle and confirm the seat ID, token, and existing pointer deliveries remain unchanged while the directory returns the new handle.
+65. Attempt to create or rename a seat to the reserved handle `founder`; confirm the operation is rejected.
 
 Receiver checks 50 and 56 require a compliant receiving client; they cannot be demonstrated by the acknowledgement endpoint alone.
 
