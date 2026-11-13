@@ -33,7 +33,7 @@ The service must not:
 
 ## 3. Package and module boundaries
 
-Ovue owns its contract, message use cases, storage, authentication, and transports inside its package. Its behavior is split by responsibility; no single service file should own all HTTP actions, persistence, and token rules. The tree below describes these boundaries, not a requirement to combine each responsibility into one file. Tests live beside the code they exercise.
+Ovue groups business capabilities into modules. The `pointers` module owns pointer use cases and persistence; the `seats` module owns seat identity and authentication. HTTP and CLI are entry points that call these modules. Tests live beside the code they exercise.
 
 ```text
 ovue/                         # standalone project and repository root
@@ -42,37 +42,47 @@ ovue/                         # standalone project and repository root
 ├── spec.md                   # implementation specification
 └── ovue/                     # importable Python package
     ├── __init__.py
-    ├── services/
-    ├── storage/
-    ├── auth/
-    └── transports/
+    ├── modules/
+    │   ├── pointers/
+    │   └── seats/
+    ├── transports/
+    │   └── http/
+    └── cli/
 ```
 
 ```mermaid
 flowchart LR
-    subgraph Message["Ovue package"]
-        HTTP["HTTP transport<br/>(HTTP requests + SSE stream)"]
-        Service[Pointer service]
-        Auth[Seat authentication]
-        Service --> Auth
-        Service --> Store[Durable pointer storage]
-        Service --> Log[Traffic log]
+    subgraph Ovue["Ovue package"]
+        subgraph Entry["Entry points"]
+            HTTP["b. HTTP transport<br/>(requests + SSE stream)"]
+            Admin["i. Local admin CLI"]
+        end
 
-        HTTP <--> Service
+        subgraph Modules["Modules"]
+            Pointer["c. Pointers module<br/>(pointer service)"]
+            Auth["d. Seats module<br/>(seat authentication)"]
+            Store["e. Durable pointer storage"]
+            Log["f. Traffic log"]
+            Pointer --> Store
+            Pointer --> Log
+        end
+
+        SQLite[("g. SQLite")]
+        Store --> SQLite
+        Log --> SQLite
+        Auth --> SQLite
     end
 
-    Agent[Agent tool] <--> |requests and events| HTTP
-    Operator[Operator] --> Admin[Local admin CLI]
-    Admin --> Service
+    Agent["a. Agent tool"] <--> |requests and events| HTTP
+    Operator["h. Operator"] --> Admin
+    HTTP <--> Pointer
+    HTTP --> Auth
+    Admin --> Pointer
     Admin --> Auth
     Admin --> Log
-    SQLite[(SQLite)]
-    Auth --> SQLite
-    Store --> SQLite
-    Log --> SQLite
 ```
 
-SSE is a delivery mode of the HTTP transport, not a separate system. The agent opens the HTTP connection, and the service sends pointer events back through it. Future transports, such as MCP, call the same pointer service and do not implement pointer rules themselves.
+SSE is a delivery mode of the HTTP transport, not a separate system. The agent opens the HTTP connection, and the service sends pointer events back through it. Future transports, such as MCP, call the same modules and do not implement pointer rules themselves.
 
 ## 4. Pointer contract
 
