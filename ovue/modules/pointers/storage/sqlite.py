@@ -1,4 +1,4 @@
-"""SQLite persistence for pointers, recipient deliveries, and traffic records."""
+"""Persist pointer sends using serialized SQLite transactions."""
 
 from __future__ import annotations
 
@@ -9,16 +9,12 @@ import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
 from uuid import uuid4
-
-if TYPE_CHECKING:
-    from ovue.modules.pointers.service import Delivery, SendResult
 
 
 @dataclass(frozen=True)
-class NewPointer:
-    """Hold validated pointer data ready for one atomic database write."""
+class PointerRecord:
+    """Hold validated pointer and authenticated sender data for persistence."""
 
     sender_id: str
     sender_display_name: str
@@ -30,27 +26,31 @@ class NewPointer:
     kind: str
 
 
-class CapacityExceeded(Exception):
-    """Represent a temporary send rejection caused by configured capacity."""
+@dataclass(frozen=True)
+class DeliveredPointer:
+    """Describe one pointer's persisted delivery to a recipient."""
 
-    def __init__(
-        self,
-        code: str,
-        message: str,
-        path: tuple[str | int, ...],
-    ) -> None:
-        """Keep structured capacity details for safe validation responses."""
+    delivery_id: str
+    recipient_id: str
+    state: str
+
+
+class CapacityReached(Exception):
+    """Report storage capacity without depending on validation-layer types."""
+
+    def __init__(self, code: str, message: str, path: tuple[str | int, ...]) -> None:
+        """Keep capacity details available for translation by the send operation."""
         self.code = code
         self.message = message
         self.path = path
         super().__init__(message)
 
 
-class SQLitePointerStorage:
-    """Persist pointer sends with serialized capacity checks and atomic writes."""
+class SQLite:
+    """Own pointer persistence and atomic send capacity checks."""
 
     def __init__(self, database_path: Path) -> None:
-        """Open the SQLite database and create the tables used by sending."""
+        """Open the database and create the tables required by pointer sending."""
         self._connection = sqlite3.connect(
             database_path,
             isolation_level=None,
@@ -61,7 +61,7 @@ class SQLitePointerStorage:
         self._create_schema()
 
     def _create_schema(self) -> None:
-        """Create normalized tables for pointers, deliveries, and the audit log."""
+        """Create normalized pointer, delivery, and traffic-log tables."""
         self._connection.executescript(
             """
             CREATE TABLE IF NOT EXISTS pointers (
@@ -76,7 +76,6 @@ class SQLitePointerStorage:
                 kind TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
-
             CREATE TABLE IF NOT EXISTS deliveries (
                 delivery_id TEXT PRIMARY KEY,
                 pointer_id TEXT NOT NULL REFERENCES pointers(pointer_id),
@@ -86,10 +85,8 @@ class SQLitePointerStorage:
                 created_at TEXT NOT NULL,
                 UNIQUE (recipient_id, recipient_sequence)
             );
-
             CREATE INDEX IF NOT EXISTS deliveries_recipient_state
                 ON deliveries (recipient_id, state);
-
             CREATE TABLE IF NOT EXISTS traffic_log (
                 log_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 pointer_id TEXT NOT NULL,
@@ -110,14 +107,15 @@ class SQLitePointerStorage:
 
     def persist_send(
         self,
-        pointer: NewPointer,
+        pointer: PointerRecord,
         *,
         max_pointer_records: int,
         max_logical_database_bytes: int,
         max_unread_per_seat: int,
-    ) -> SendResult:
-        """Check capacity and persist a pointer and all deliveries atomically."""
+    ) -> tuple[str, tuple[DeliveredPointer, ...]]:
+        """Check capacity and persist pointer, deliveries, and logs atomically."""
         with self._lock:
+            # BEGIN IMMEDIATE prevents concurrent sends from racing on capacity.
             self._connection.execute("BEGIN IMMEDIATE")
             try:
                 self._set_physical_page_limit(max_logical_database_bytes)
@@ -129,15 +127,15 @@ class SQLitePointerStorage:
                     pointer.recipients,
                     max_unread_per_seat,
                 )
-                result = self._insert_pointer(pointer)
+                pointer_id, deliveries = self._insert_pointer(pointer)
                 self._connection.execute("COMMIT")
-                return result
+                return pointer_id, deliveries
             except Exception:
                 self._connection.execute("ROLLBACK")
                 raise
 
     def _set_physical_page_limit(self, logical_limit_bytes: int) -> None:
-        """Reserve physical SQLite headroom for acknowledgements and maintenance."""
+        """Reserve 15 percent physical headroom for recovery and maintenance writes."""
         page_size = int(self._connection.execute("PRAGMA page_size").fetchone()[0])
         physical_limit_bytes = math.ceil(logical_limit_bytes * 1.15)
         max_pages = math.ceil(physical_limit_bytes / page_size)
@@ -148,12 +146,12 @@ class SQLitePointerStorage:
         max_pointer_records: int,
         max_logical_database_bytes: int,
     ) -> None:
-        """Reject writes that would exceed row-count or logical-size limits."""
+        """Reject writes that would exceed configured pointer or logical-size limits."""
         pointer_count = int(
             self._connection.execute("SELECT COUNT(*) FROM pointers").fetchone()[0]
         )
         if pointer_count >= max_pointer_records:
-            raise CapacityExceeded(
+            raise CapacityReached(
                 "storage_limit_reached",
                 "Pointer storage capacity is full",
                 ("to",),
@@ -164,9 +162,10 @@ class SQLitePointerStorage:
             self._connection.execute("PRAGMA freelist_count").fetchone()[0]
         )
         page_size = int(self._connection.execute("PRAGMA page_size").fetchone()[0])
+        # Free pages do not count as used space because SQLite can reuse them.
         logical_bytes = (page_count - free_pages) * page_size
         if logical_bytes >= max_logical_database_bytes:
-            raise CapacityExceeded(
+            raise CapacityReached(
                 "storage_limit_reached",
                 "Pointer storage capacity is full",
                 ("to",),
@@ -177,7 +176,7 @@ class SQLitePointerStorage:
         recipients: tuple[str, ...],
         max_unread_per_seat: int,
     ) -> None:
-        """Check every inbox inside the same write transaction as the send."""
+        """Reject a send if any recipient inbox has no unread slot remaining."""
         for position, recipient_id in enumerate(recipients):
             unread_count = int(
                 self._connection.execute(
@@ -189,16 +188,17 @@ class SQLitePointerStorage:
                 ).fetchone()[0]
             )
             if unread_count >= max_unread_per_seat:
-                raise CapacityExceeded(
+                raise CapacityReached(
                     "recipient_inbox_full",
                     "The recipient's inbox is full",
                     ("to", position),
                 )
 
-    def _insert_pointer(self, pointer: NewPointer) -> SendResult:
-        """Insert the pointer, its recipient deliveries, and log rows."""
-        from ovue.modules.pointers.service import Delivery, SendResult
-
+    def _insert_pointer(
+        self,
+        pointer: PointerRecord,
+    ) -> tuple[str, tuple[DeliveredPointer, ...]]:
+        """Insert the pointer, all recipient deliveries, and corresponding log rows."""
         pointer_id = str(uuid4())
         created_at = datetime.now(UTC).isoformat()
         recipients_json = json.dumps(pointer.recipients, separators=(",", ":"))
@@ -223,7 +223,7 @@ class SQLitePointerStorage:
             ),
         )
 
-        deliveries: list[Delivery] = []
+        deliveries: list[DeliveredPointer] = []
         for recipient_id in pointer.recipients:
             delivery_id = str(uuid4())
             sequence = int(
@@ -267,25 +267,34 @@ class SQLitePointerStorage:
                 ),
             )
             deliveries.append(
-                Delivery(
+                DeliveredPointer(
                     delivery_id=delivery_id,
                     recipient_id=recipient_id,
                     state="unread",
                 )
             )
 
-        return SendResult(pointer_id=pointer_id, deliveries=tuple(deliveries))
+        return pointer_id, tuple(deliveries)
 
     def snapshot(self) -> tuple[int, int, int]:
-        """Return table counts for assertions about atomic test outcomes."""
+        """Return pointer, delivery, and log counts for storage tests."""
         with self._lock:
             pointer_count = int(
                 self._connection.execute("SELECT COUNT(*) FROM pointers").fetchone()[0]
             )
             delivery_count = int(
-                self._connection.execute("SELECT COUNT(*) FROM deliveries").fetchone()[0]
+                self._connection.execute("SELECT COUNT(*) FROM deliveries").fetchone()[
+                    0
+                ]
             )
             log_count = int(
-                self._connection.execute("SELECT COUNT(*) FROM traffic_log").fetchone()[0]
+                self._connection.execute("SELECT COUNT(*) FROM traffic_log").fetchone()[
+                    0
+                ]
             )
             return pointer_count, delivery_count, log_count
+
+    def close(self) -> None:
+        """Close the SQLite connection when its owner is finished with it."""
+        with self._lock:
+            self._connection.close()

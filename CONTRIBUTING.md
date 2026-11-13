@@ -19,7 +19,7 @@ If a change affects the pointer contract, delivery behavior, security rules, or 
 - Work vertically through the affected behavior: define or update the requirement, implement it, add or update colocated tests, and verify the slice before expanding scope.
 - Keep related domain code together. Split responsibilities into focused modules and avoid God files.
 - Place tests beside the code they exercise.
-- Include line-by-line explanatory comments when adding code, as required for this project is a simple way for developers to understand how python works.
+- Use docstrings to explain a module, class, or function's purpose and contract. Add inline comments only when the code and its docstrings leave an important step or rationale unclear; do not repeat self-explanatory lines comment by comment.
 
 ## Preserve Ovue's boundaries
 

@@ -24,6 +24,26 @@ It does not own HTTP parsing, SSE connections, command-line argument parsing, se
 - The seats module supplies authenticated identity and recipient lookup. The pointers module must not accept a sender identity supplied by an agent request body.
 - SQLite is accessed through the pointers module's persistence boundary. Transport and CLI code do not issue pointer queries directly.
 
+## Layout
+
+Each concern has its own folder, with its tests beside the code they exercise:
+
+```text
+pointers/
+├── send/
+│   ├── operation.py
+│   └── test_operation.py
+├── validation/
+│   ├── validation.py
+│   └── test_validation.py
+├── storage/
+│   ├── sqlite.py
+│   └── test_sqlite.py
+└── utils/
+    ├── functions.py
+    └── test_functions.py
+```
+
 ```mermaid
 flowchart LR
     subgraph Adapters[Outside this module]
