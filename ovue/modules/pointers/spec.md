@@ -26,20 +26,59 @@ It does not own HTTP parsing, SSE connections, command-line argument parsing, se
 
 ```mermaid
 flowchart LR
-    Agent[Agent tool] --> HTTP[HTTP transport]
-    Operator[Operator] --> CLI[Local admin CLI]
+    subgraph People[External participants]
+        direction TB
+        Agent["(a) Agent tool"]
+        Operator["(h) Operator"]
+    end
 
-    HTTP --> UseCases[Pointer use cases]
-    CLI --> UseCases
+    subgraph Ovue[Ovue]
+        direction LR
+        subgraph Entry[Entry points]
+            direction TB
+            HTTP["(b) HTTP transport"]
+            CLI["(i) Local admin CLI"]
+        end
 
-    UseCases --> Seats[Seats module<br/>identity and recipient lookup]
-    UseCases --> Storage[Pointer persistence]
-    UseCases --> Traffic[Traffic log]
-    Storage --> DB[(SQLite)]
-    Traffic --> DB
+        UseCases["(c) Pointer use cases<br/>send slice"]
+        Seats["(d) Seats module<br/>identity and recipient lookup"]
+        Storage["(e) Pointer persistence<br/>send writes"]
+        Traffic["(f) Traffic log<br/>send records"]
+        DB[("(g) SQLite<br/>pointer slice")]
 
-    UseCases -->|inbox events| HTTP
+        HTTP <--> UseCases
+        CLI <--> UseCases
+        UseCases --> Seats
+        UseCases --> Storage
+        UseCases --> Traffic
+        Storage --> DB
+        Traffic --> DB
+    end
+
+    Agent <--> HTTP
+    Operator <--> CLI
+
+    classDef partial fill:#fef3c7,stroke:#d97706,color:#78350f;
+    classDef todo fill:#e5e7eb,stroke:#6b7280,color:#374151;
+    classDef external fill:#dbeafe,stroke:#2563eb,color:#1e3a8a;
+    class UseCases,Storage,Traffic,DB partial;
+    class HTTP,CLI,Seats todo;
+    class Agent,Operator external;
 ```
+
+**Implementation status:** 🟩 Complete · 🟨 Partial · ⬜ Not started. External participants are blue and are not implementation tasks. The amber boxes cover only the send slice; their other responsibilities are not implemented yet.
+
+| Box | Responsibility |
+| --- | --- |
+| (a) Agent tool | Sends pointers and receives inbox or stream events through Ovue. |
+| (b) HTTP transport | Converts HTTP requests and SSE connections into calls to pointer use cases, and returns their results. |
+| (c) Pointer use cases | Applies pointer rules for sending, inbox retrieval, replay, acknowledgement, traffic-log access, and purge. |
+| (d) Seats module | Authenticates seats and resolves recipient identities. |
+| (e) Pointer persistence | Stores pointers, per-recipient deliveries, and event ordering durably. |
+| (f) Traffic log | Records pointer activity for the operator to inspect. |
+| (g) SQLite | Persists pointer, delivery, seat, and traffic-log data. |
+| (h) Operator | Uses Ovue administration capabilities. |
+| (i) Local admin CLI | Exposes operator actions and calls the relevant module use cases. |
 
 ## State and consistency
 
