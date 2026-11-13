@@ -52,35 +52,64 @@ ovue/                         # standalone project and repository root
 
 ```mermaid
 flowchart LR
+    subgraph People[External participants]
+        direction TB
+        Agent["(a) Agent tool"]
+        Operator["(h) Operator"]
+    end
+
     subgraph Ovue["Ovue package"]
+        direction LR
         subgraph Entry["Entry points"]
-            HTTP["b. HTTP transport<br/>(requests + SSE stream)"]
-            Admin["i. Local admin CLI"]
+            direction TB
+            HTTP["(b) HTTP transport"]
+            Admin["(i) Local admin CLI"]
         end
 
         subgraph Modules["Modules"]
-            Pointer["c. Pointers module<br/>(pointer service)"]
-            Auth["d. Seats module<br/>(seat authentication)"]
-            Store["e. Durable pointer storage"]
-            Log["f. Traffic log"]
+            Pointer["(c) Pointer use cases<br/>send slice"]
+            Auth["(d) Seats module<br/>identity and recipient lookup"]
+            Store["(e) Pointer persistence<br/>send writes"]
+            Log["(f) Traffic log<br/>send records"]
             Pointer --> Store
             Pointer --> Log
         end
 
-        SQLite[("g. SQLite")]
+        SQLite[("(g) SQLite<br/>pointer slice")]
         Store --> SQLite
         Log --> SQLite
         Auth --> SQLite
     end
 
-    Agent["a. Agent tool"] <--> |requests and events| HTTP
-    Operator["h. Operator"] --> Admin
+    Agent <--> HTTP
+    Operator <--> Admin
     HTTP <--> Pointer
     HTTP --> Auth
     Admin --> Pointer
     Admin --> Auth
     Admin --> Log
+
+    classDef partial fill:#fef3c7,stroke:#d97706,color:#78350f;
+    classDef todo fill:#e5e7eb,stroke:#6b7280,color:#374151;
+    classDef external fill:#dbeafe,stroke:#2563eb,color:#1e3a8a;
+    class Pointer,Store,Log,SQLite partial;
+    class HTTP,Admin,Auth todo;
+    class Agent,Operator external;
 ```
+
+**Implementation status:** 🟩 Complete · 🟨 Partial · ⬜ Not started. External participants are blue and are not implementation tasks. The amber boxes cover only the send slice; their other responsibilities are not implemented yet.
+
+| Box | Responsibility |
+| --- | --- |
+| (a) Agent tool | Sends pointers and receives inbox or stream events through Ovue. |
+| (b) HTTP transport | Converts HTTP requests and SSE connections into calls to pointer use cases, and returns their results. |
+| (c) Pointer use cases | Applies pointer rules for sending, inbox retrieval, replay, acknowledgement, traffic-log access, and purge. |
+| (d) Seats module | Authenticates seats and resolves recipient identities. |
+| (e) Pointer persistence | Stores pointers, per-recipient deliveries, and event ordering durably. |
+| (f) Traffic log | Records pointer activity for the operator to inspect. |
+| (g) SQLite | Persists pointer, delivery, seat, and traffic-log data. |
+| (h) Operator | Uses Ovue administration capabilities. |
+| (i) Local admin CLI | Exposes operator actions and calls the relevant module use cases. |
 
 SSE is a delivery mode of the HTTP transport, not a separate system. The agent opens the HTTP connection, and the service sends pointer events back through it. Future transports, such as MCP, call the same modules and do not implement pointer rules themselves.
 
