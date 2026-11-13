@@ -7,7 +7,7 @@ This document defines the responsibility of the `pointers` module. The repositor
 
 ## Responsibility
 
-The pointers module owns pointer use cases and their durable state:
+The pointers module owns pointer operations and their durable state:
 
 - validate and send a pointer on behalf of an authenticated sender;
 - create one independent delivery for each recipient;
@@ -26,59 +26,48 @@ It does not own HTTP parsing, SSE connections, command-line argument parsing, se
 
 ```mermaid
 flowchart LR
-    subgraph People[External participants]
+    subgraph Adapters[Outside this module]
         direction TB
-        Agent["(a) Agent tool"]
-        Operator["(h) Operator"]
+        HTTP["(a) HTTP transport"]
+        CLI["(b) Local admin CLI"]
+        Seats["(c) Seats interface<br/>sender identity and recipient lookup"]
     end
 
-    subgraph Ovue[Ovue]
-        direction LR
-        subgraph Entry[Entry points]
-            direction TB
-            HTTP["(b) HTTP transport"]
-            CLI["(i) Local admin CLI"]
-        end
+    subgraph PointerModule[Pointers module]
+        Send["(d) Send pointer operation"]
+        Validate["(e) Validate fields<br/>deduplicate recipients"]
+        Transaction["(f) BEGIN IMMEDIATE<br/>check storage and inbox capacity"]
+        Persist["(g) Write pointer,<br/>deliveries, and traffic rows"]
+        DB[("(h) SQLite")]
+        Other["(i) Inbox, replay, ack,<br/>traffic read, and purge"]
 
-        UseCases["(c) Pointer use cases<br/>send slice"]
-        Seats["(d) Seats module<br/>identity and recipient lookup"]
-        Storage["(e) Pointer persistence<br/>send writes"]
-        Traffic["(f) Traffic log<br/>send records"]
-        DB[("(g) SQLite<br/>pointer slice")]
-
-        HTTP <--> UseCases
-        CLI <--> UseCases
-        UseCases --> Seats
-        UseCases --> Storage
-        UseCases --> Traffic
-        Storage --> DB
-        Traffic --> DB
+        Send --> Validate --> Transaction --> Persist --> DB
+        Other -. planned operations .-> DB
     end
 
-    Agent <--> HTTP
-    Operator <--> CLI
+    HTTP --> Send
+    CLI --> Send
+    Seats --> Send
 
     classDef partial fill:#fef3c7,stroke:#d97706,color:#78350f;
     classDef todo fill:#e5e7eb,stroke:#6b7280,color:#374151;
-    classDef external fill:#dbeafe,stroke:#2563eb,color:#1e3a8a;
-    class UseCases,Storage,Traffic,DB partial;
-    class HTTP,CLI,Seats todo;
-    class Agent,Operator external;
+    class Send,Validate,Transaction,Persist,DB partial;
+    class HTTP,CLI,Seats,Other todo;
 ```
 
-**Implementation status:** 🟩 Complete · 🟨 Partial · ⬜ Not started. External participants are blue and are not implementation tasks. The amber boxes cover only the send slice; their other responsibilities are not implemented yet.
+**Implementation status:** 🟨 Partial · ⬜ Not started. Amber marks the send path currently implemented and tested; gray marks adapters, the seats interface, and pointer operations not yet implemented.
 
 | Box | Responsibility |
 | --- | --- |
-| (a) Agent tool | Sends pointers and receives inbox or stream events through Ovue. |
-| (b) HTTP transport | Converts HTTP requests and SSE connections into calls to pointer use cases, and returns their results. |
-| (c) Pointer use cases | Applies pointer rules for sending, inbox retrieval, replay, acknowledgement, traffic-log access, and purge. |
-| (d) Seats module | Authenticates seats and resolves recipient identities. |
-| (e) Pointer persistence | Stores pointers, per-recipient deliveries, and event ordering durably. |
-| (f) Traffic log | Records pointer activity for the operator to inspect. |
-| (g) SQLite | Persists pointer, delivery, seat, and traffic-log data. |
-| (h) Operator | Uses Ovue administration capabilities. |
-| (i) Local admin CLI | Exposes operator actions and calls the relevant module use cases. |
+| (a) HTTP transport | Passes an authenticated send request to the module and returns its result. |
+| (b) Local admin CLI | Passes operator send requests to the module. |
+| (c) Seats interface | Supplies authenticated sender identity and recipient IDs. |
+| (d) Send pointer operation | Coordinates validation and durable creation of one pointer and its deliveries. |
+| (e) Validation | Checks pointer fields and recipient rules, then collapses duplicate recipient IDs. |
+| (f) Send transaction | Serializes storage and unread-inbox capacity checks with pointer creation. |
+| (g) Persistence writes | Stores the pointer, one delivery per recipient, and corresponding traffic records atomically. |
+| (h) SQLite | Stores pointer, delivery, and traffic-log data for the send slice. |
+| (i) Other operations | Inbox, event replay, acknowledgement, traffic-log reading, and purge remain to be implemented. |
 
 ## State and consistency
 
@@ -90,6 +79,6 @@ flowchart LR
 
 ## Public operations
 
-The module exposes use cases for sending a pointer, listing inbox pages and unread backlog, replaying events after a recipient sequence cursor, acknowledging a delivery, reading the operator traffic log, and purging eligible records.
+The module exposes operations for sending a pointer, listing inbox pages and unread backlog, replaying events after a recipient sequence cursor, acknowledging a delivery, reading the operator traffic log, and purging eligible records.
 
 The exact request and response fields, validation rules, errors, ordering, and retry semantics are defined in the repository-level [`spec.md`](../../../spec.md). The module should expose typed Python inputs and results rather than HTTP request or response objects.
