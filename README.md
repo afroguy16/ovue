@@ -30,12 +30,33 @@ If a pointer is rejected because a recipient's inbox is full, the condition is t
 
 ## Setup
 
-Use Python 3.11 or newer from this project directory.
+Use Python 3.11 or newer from this project directory. To install Ovue with its development and test tools:
 
 ```sh
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install --editable .
+python -m pip install --editable '.[dev]'
+```
+
+Run the test suite from the repository root:
+
+```sh
+python -m pytest
+```
+
+The development extra installs pytest, Ruff, and mypy. To run the other checks:
+
+```sh
+ruff check .
+ruff format --check .
+mypy
+```
+
+To install only the application without development tools, use `python -m pip install --editable .`.
+
+Run the CLI with:
+
+```sh
 ovue --help
 ```
 

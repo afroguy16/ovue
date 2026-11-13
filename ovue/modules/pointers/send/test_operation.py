@@ -1,4 +1,4 @@
-"""Test the complete send operation using its validation and SQLite boundaries."""
+"""Check that sending pointers validates them and saves them in SQLite."""
 
 from pathlib import Path
 
@@ -9,8 +9,9 @@ from ovue.modules.pointers.storage.sqlite import SQLite
 from ovue.modules.pointers.validation.validation import IssueRejected, Payload, Policy
 
 
+# Use small limits so each test can quickly reach the conditions it checks.
 def make_policy(*, max_pointer_records: int = 10) -> Policy:
-    """Return small finite limits for fast operation-level tests."""
+    """Set the allowed host and small storage and inbox limits for these tests."""
     return Policy(
         allowed_hosts=frozenset({"work.example.org"}),
         max_pointer_records=max_pointer_records,
@@ -19,8 +20,9 @@ def make_policy(*, max_pointer_records: int = 10) -> Policy:
     )
 
 
+# Start with valid pointer details and let each test choose the recipient seats.
 def make_payload(to: tuple[str, ...] = ("seat_b",)) -> Payload:
-    """Return a valid submission addressed to the requested seat IDs."""
+    """Make valid pointer details addressed to the selected recipient seats."""
     return Payload(
         to=to,
         ref_url="https://work.example.org/items/42",
@@ -30,10 +32,11 @@ def make_payload(to: tuple[str, ...] = ("seat_b",)) -> Payload:
     )
 
 
+# Check that each recipient seat gets one delivery, even if listed twice.
 def test_send_creates_one_pointer_and_one_delivery_per_unique_recipient(
     tmp_path: Path,
 ) -> None:
-    """Send creates one pointer while duplicate recipients get one delivery each."""
+    """Save one pointer and one delivery for each different recipient seat."""
     storage = SQLite(tmp_path / "pointers.sqlite3")
 
     result = send(
@@ -50,10 +53,11 @@ def test_send_creates_one_pointer_and_one_delivery_per_unique_recipient(
     storage.close()
 
 
+# Check that one full inbox prevents the entire send from being saved.
 def test_send_rejects_full_inbox_without_creating_partial_deliveries(
     tmp_path: Path,
 ) -> None:
-    """A full inbox rejects the whole send even when an earlier recipient has room."""
+    """Save nothing when one recipient's inbox is full, even if another has room."""
     storage = SQLite(tmp_path / "pointers.sqlite3")
     sender = Sender(id="seat_a", display_name="Ari", role="Writer")
     known_seat_ids = {"seat_a", "seat_b", "seat_c"}
@@ -83,8 +87,9 @@ def test_send_rejects_full_inbox_without_creating_partial_deliveries(
     storage.close()
 
 
+# Check that sending stops when the database already has its maximum pointers.
 def test_send_rejects_storage_limit_without_writing_rows(tmp_path: Path) -> None:
-    """The pointer-row limit rejects further sends without partial rows."""
+    """Save no more pointers after the database reaches its pointer limit."""
     storage = SQLite(tmp_path / "pointers.sqlite3")
     sender = Sender(id="seat_a", display_name="Ari", role="Writer")
     known_seat_ids = {"seat_a", "seat_b"}

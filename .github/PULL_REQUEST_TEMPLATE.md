@@ -8,6 +8,7 @@ What problem does this change solve?
 - [ ] The change follows the Ovue specification.
 - [ ] I updated the specification if the contract or required behavior changed.
 - [ ] I added or updated tests for behavior changes.
+- [ ] I reviewed [testing_strategy.md](../testing_strategy.md) and covered the relevant allowed, rejected, and boundary cases.
 
 ## Verification
 

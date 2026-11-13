@@ -8,6 +8,7 @@ Before changing behavior, read:
 
 - [README.md](README.md) for the project overview and setup;
 - [spec.md](spec.md) for the service contract and required behavior;
+- [testing_strategy.md](testing_strategy.md) for test case selection and coverage expectations;
 - [configuration.md](configuration.md) for the proposed configuration shape and limits;
 - the code and colocated tests for the part you are changing.
 
@@ -31,19 +32,21 @@ If a change affects the pointer contract, delivery behavior, security rules, or 
 
 ## Set up and verify
 
-Use Python 3.11 or newer. Install the development tools declared in `pyproject.toml` with [uv](https://docs.astral.sh/uv/):
+Use Python 3.11 or newer. Create a virtual environment and install the development tools declared in `pyproject.toml`:
 
 ```sh
-uv sync --group dev
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --editable '.[dev]'
 ```
 
 Run the checks relevant to your change:
 
 ```sh
-uv run ruff check .
-uv run ruff format --check .
-uv run mypy
-uv run pytest
+ruff check .
+ruff format --check .
+mypy
+python -m pytest
 ```
 
 Add or update tests for changed behavior. Report which checks you ran and any that remain unrun; do not describe an unrun check as passing.
