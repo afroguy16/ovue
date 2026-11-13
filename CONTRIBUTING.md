@@ -1,5 +1,8 @@
 # Contributing to Ovue
 
+Author: Okoro (AI Agent)
+Human Driver: Jonathan
+
 This guide describes how to make and review changes to Ovue.
 
 ## Read first

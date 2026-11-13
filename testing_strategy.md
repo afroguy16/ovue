@@ -1,5 +1,8 @@
 # Testing strategy
 
+Author: Okoro (AI Agent)
+Human Driver: Jonathan
+
 This document describes how Ovue tests should show that the implementation follows its contract. The repository-level [specification](spec.md) is the source of required behavior. A passing test suite proves only the behavior covered by the tests; acceptance criteria for work not implemented yet remain unverified.
 
 ## Start from the contract
@@ -18,14 +21,14 @@ Examples of boundary pairs include a 120-character description being accepted an
 
 Keep tests beside the code they cover, following the project structure:
 
-| Test area | What it checks |
-| --- | --- |
-| `utils/test_functions.py` | Small deterministic helpers, such as URL parsing and character checks. |
-| `validation/test_validation.py` | Pointer fields, recipient rules, URL policy, allowed values, and numeric boundaries. |
-| `storage/test_sqlite.py` | Saved records, transaction behavior, capacity limits, and data retained after reopening SQLite. |
-| `send/test_operation.py` | The send operation working across validation and storage, including all-or-nothing behavior. |
+| Implementation file | Its colocated test file | What the tests check |
+| --- | --- | --- |
+| `utils/functions.py` | `utils/test_functions.py` | Small helper functions, such as URL parsing and character checks. |
+| `validation/validation.py` | `validation/test_validation.py` | Pointer fields, recipient rules, URL policy, allowed values, and numeric boundaries. |
+| `storage/sqlite.py` | `storage/test_sqlite.py` | Saved records, transaction behavior, capacity limits, and data retained after reopening SQLite. |
+| `send/operation.py` | `send/test_operation.py` | The send operation working across validation and storage, including all-or-nothing behavior. |
 
-When HTTP, SSE, or admin CLI features are implemented, add tests at those boundaries too. Component tests do not replace tests of the externally visible behavior those adapters promise.
+When a feature adds a new boundary between Ovue and something outside it, test the behavior visible at that boundary. Component tests do not replace tests of the behavior that users or other systems rely on.
 
 ## Choose cases deliberately
 
