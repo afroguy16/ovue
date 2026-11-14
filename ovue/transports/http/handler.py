@@ -6,6 +6,7 @@ import json
 import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
+from io import BufferedReader
 from typing import Protocol, cast
 from urllib.parse import parse_qs, urlsplit
 
@@ -19,6 +20,7 @@ from ovue.modules.pointers.validation.validation import Issue, IssueRejected, Po
 from ovue.modules.seats.directory.operation import seat_directory
 from ovue.modules.seats.entities import AuthenticatedSeat
 from ovue.transports.http.application import HTTPApplication
+from ovue.transports.http.deadline import DeadlineReader
 from ovue.transports.http.request import parse_pointer_payload
 from ovue.transports.http.sse import encode_event, heartbeat
 
@@ -31,6 +33,22 @@ class _ServerWithApplication(Protocol):
 
 class OvueRequestHandler(BaseHTTPRequestHandler):
     """Handle one request without logging its path, headers, or body."""
+
+    def setup(self) -> None:
+        """Apply a total deadline to reading this connection's HTTP request."""
+        super().setup()
+        timeout = self._application().settings.request_timeout_seconds
+        self.rfile = cast(
+            BufferedReader,
+            DeadlineReader(cast(BufferedReader, self.rfile), self.connection, timeout),
+        )
+
+    def handle(self) -> None:
+        """Close peers that exceed the request deadline without a traceback."""
+        try:
+            super().handle()
+        except TimeoutError:
+            self.close_connection = True
 
     def do_GET(self) -> None:
         """Route authenticated directory, inbox, and stream requests."""

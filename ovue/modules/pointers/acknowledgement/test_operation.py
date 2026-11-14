@@ -14,7 +14,9 @@ def test_acknowledgement_is_idempotent_and_changes_only_one_recipient(
     tmp_path: Path,
 ) -> None:
     """Make repeated acknowledgements harmless and preserve other recipients' state."""
-    storage = SQLite(tmp_path / "pointers.sqlite3")
+    storage = SQLite(
+        tmp_path / "pointers.sqlite3", max_logical_database_bytes=1_000_000
+    )
     payload = Payload(
         ("seat_b", "seat_c"),
         "https://work.example.org/items/42",
@@ -44,7 +46,9 @@ def test_acknowledgement_hides_unknown_and_foreign_delivery_ids(
     tmp_path: Path,
 ) -> None:
     """Return the same not-found result for unknown and another seat's delivery."""
-    storage = SQLite(tmp_path / "pointers.sqlite3")
+    storage = SQLite(
+        tmp_path / "pointers.sqlite3", max_logical_database_bytes=1_000_000
+    )
     result = send(
         Payload(("seat_b",), "https://work.example.org/i/1", None, "Ready", "done"),
         sender=Sender("seat_a", "Ari", "Writer"),

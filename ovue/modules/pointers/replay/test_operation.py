@@ -28,7 +28,9 @@ def test_replay_preserves_delivery_ids_and_recipient_sequence_order(
     tmp_path: Path,
 ) -> None:
     """Return later events in sequence order with stable delivery IDs."""
-    storage = SQLite(tmp_path / "pointers.sqlite3")
+    storage = SQLite(
+        tmp_path / "pointers.sqlite3", max_logical_database_bytes=1_000_000
+    )
     first_id = save_pointer(storage)
     save_pointer(storage)
 
@@ -46,7 +48,9 @@ def test_replay_rejects_malformed_negative_or_future_cursors(
     tmp_path: Path,
 ) -> None:
     """Reject a cursor that cannot identify a valid point in the seat sequence."""
-    storage = SQLite(tmp_path / "pointers.sqlite3")
+    storage = SQLite(
+        tmp_path / "pointers.sqlite3", max_logical_database_bytes=1_000_000
+    )
     save_pointer(storage)
     with pytest.raises(ValueError):
         replay_after(storage, "seat_b", cursor)
@@ -57,7 +61,9 @@ def test_replay_requires_inbox_recovery_when_earlier_events_were_purged(
     tmp_path: Path,
 ) -> None:
     """Use inbox recovery when the retained event history starts after the cursor."""
-    storage = SQLite(tmp_path / "pointers.sqlite3")
+    storage = SQLite(
+        tmp_path / "pointers.sqlite3", max_logical_database_bytes=1_000_000
+    )
     first_id = save_pointer(storage)
     save_pointer(storage)
     first_pointer_id = storage._connection.execute(
@@ -77,7 +83,9 @@ def test_replay_requires_inbox_recovery_when_earlier_events_were_purged(
 
 def test_new_stream_backlog_contains_only_unread_deliveries(tmp_path: Path) -> None:
     """Provide unread deliveries to a new stream before it begins live polling."""
-    storage = SQLite(tmp_path / "pointers.sqlite3")
+    storage = SQLite(
+        tmp_path / "pointers.sqlite3", max_logical_database_bytes=1_000_000
+    )
     first_id = save_pointer(storage)
     save_pointer(storage)
     acknowledge(storage, first_id, recipient_id="seat_b")
@@ -92,7 +100,7 @@ def test_new_stream_backlog_contains_only_unread_deliveries(tmp_path: Path) -> N
 def test_event_sequence_survives_purging_all_deliveries(tmp_path: Path) -> None:
     """Keep recipient event IDs increasing after retained pointer history is purged."""
     database_path = tmp_path / "pointers.sqlite3"
-    storage = SQLite(database_path)
+    storage = SQLite(database_path, max_logical_database_bytes=1_000_000)
     first_id = save_pointer(storage)
     second_id = save_pointer(storage)
     acknowledge(storage, first_id, recipient_id="seat_b")
@@ -105,7 +113,7 @@ def test_event_sequence_survives_purging_all_deliveries(tmp_path: Path) -> None:
     )
     storage.close()
 
-    storage = SQLite(database_path)
+    storage = SQLite(database_path, max_logical_database_bytes=1_000_000)
 
     assert storage.latest_sequence("seat_b") == 2
     with pytest.raises(RuntimeError, match="no longer retained"):

@@ -31,7 +31,9 @@ def test_create_seat_rejects_insufficient_stream_or_unread_reservation(
     tmp_path: Path,
 ) -> None:
     """Keep each registered seat's minimum stream and unread capacity available."""
-    storage = SeatStorage(tmp_path / "ovue.sqlite3")
+    storage = SeatStorage(
+        tmp_path / "ovue.sqlite3", max_logical_database_bytes=1_000_000
+    )
     settings = make_settings(tmp_path)
     create_seat(
         storage,
@@ -56,7 +58,9 @@ def test_concurrent_seat_creation_cannot_overbook_global_reservations(
     tmp_path: Path,
 ) -> None:
     """Serialize concurrent registrations against the global unread reservation."""
-    storage = SeatStorage(tmp_path / "ovue.sqlite3")
+    storage = SeatStorage(
+        tmp_path / "ovue.sqlite3", max_logical_database_bytes=1_000_000
+    )
     settings = make_settings(tmp_path)
 
     def register(handle: str) -> str:

@@ -13,7 +13,9 @@ def test_purge_removes_only_old_fully_read_pointers_and_old_log_rows(
     tmp_path: Path,
 ) -> None:
     """Keep unread pointers while removing eligible pointer and log records."""
-    storage = SQLite(tmp_path / "pointers.sqlite3")
+    storage = SQLite(
+        tmp_path / "pointers.sqlite3", max_logical_database_bytes=1_000_000
+    )
     result = send(
         Payload(("seat_b",), "https://work.example.org/i/1", None, "Ready", "done"),
         sender=Sender("seat_a", "Ari", "Writer"),

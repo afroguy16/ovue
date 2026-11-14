@@ -239,6 +239,7 @@ replay_unavailable 409
 payload_too_large  413
 rate_limited       429, with retry_after_seconds
 method_not_allowed 405
+server_busy        503, when the configured HTTP worker limit is reached
 ```
 
 `POST /ack/{delivery-id}` returns the same `404 not_found` response when the delivery does not exist or belongs to another seat. This prevents delivery-ID probing. `/inbox/{seat-id}` and `/stream/{seat-id}` return `403 forbidden` when another seat's ID is requested. An unavailable replay returns HTTP `409` with this body:
@@ -305,7 +306,7 @@ The database and traffic log are sensitive. On local installations, their parent
 
 Every deployment must configure finite limits for pointer-row count and logical SQLite database size. The Founder will confirm the default values before the first run; until then, use `FOUNDER_CONFIRM` placeholders and require explicit finite values at startup. The service warns the operator at 80% of either logical limit. The logical database-size measure is `(page_count - freelist_count) * page_size`, using SQLite's `PRAGMA page_count`, `PRAGMA freelist_count`, and `PRAGMA page_size`.
 
-Set `PRAGMA max_page_count` to cap the physical file at 115% of the logical byte limit, rounded up to a whole page. This 15% headroom is reserved for acknowledgements, seat revocation and token rotation, and purge operations; sends are rejected at the logical limit and cannot consume it. These recovery and control operations remain available while the logical send limit is full. Freed pages remain reusable after purge even when SQLite does not shrink the file.
+Set `PRAGMA max_page_count` on every SQLite connection that can write the shared database, including pointer and seat storage, to cap the physical file at 115% of the logical byte limit, rounded up to a whole page. This 15% headroom is reserved for acknowledgements, seat revocation and token rotation, and purge operations; sends are rejected at the logical limit and cannot consume it. These recovery and control operations remain available while the logical send limit is full. Freed pages remain reusable after purge even when SQLite does not shrink the file.
 
 The service checks both limits inside the send transaction, after `BEGIN IMMEDIATE` acquires SQLite's write lock. The transaction includes pointer creation, every recipient delivery, quota accounting, and per-recipient sequence assignment. This serializes concurrent send checks and preserves all-or-nothing pointer creation.
 
@@ -342,7 +343,7 @@ Non-local administration is out of scope for version one.
 
 ## 10. Limits and deployment
 
-Configure per-seat and global limits for send rate, invalid send attempts, recipient deliveries, request-body bytes, open streams, unread deliveries, replay size, and total storage. Initial defaults are 60 send requests per minute per seat and source, 60 invalid send attempts per minute per seat and source, 4 KiB per request body, 8 open streams per seat, 128 open streams globally, 100 unread deliveries per recipient, and 1,000 replayed events per connection. Every send attempt, including an invalid attempt, also counts toward the send-request limit.
+Configure per-seat and global limits for send rate, invalid send attempts, recipient deliveries, request-body bytes, open streams, unread deliveries, replay size, total storage, and concurrent HTTP workers. Initial defaults are 60 send requests per minute per seat and source, 60 invalid send attempts per minute per seat and source, 4 KiB per request body, 8 open streams per seat, 128 open streams globally, 100 unread deliveries per recipient, 1,000 replayed events per connection, 160 concurrent HTTP workers, and a 10-second total request-read deadline. The worker limit must exceed the global stream limit so control requests retain capacity. Excess connections receive `503 server_busy` without creating a worker. The total deadline covers request headers and body; it does not reset when a peer sends occasional bytes. Every send attempt, including an invalid attempt, also counts toward the send-request limit.
 
 Each registered seat receives a nonzero reservation of at least 1 open stream and 10 unread deliveries. Global stream and unread limits must be at least the number of registered seats multiplied by those reservations; otherwise seat creation or capacity reduction is rejected. A seat may use its reservation and only unused capacity beyond all reservations.
 
@@ -419,6 +420,8 @@ Any non-local deployment requires HTTPS and rejects startup if a cleartext liste
 63. Attempt to create two seats with handles that differ only by letter case; confirm the duplicate is rejected.
 64. Rename a seat handle and confirm the seat ID, token, and existing pointer deliveries remain unchanged while the directory returns the new handle.
 65. Attempt to create or rename a seat to the reserved handle `founder`; confirm the operation is rejected.
+66. Open slow partial HTTP requests until the configured worker limit is reached; confirm excess requests receive `503 server_busy`, slow requests close at the total header/body deadline, and the workers become available again.
+67. Reach the logical SQLite limit, then perform acknowledgement, seat revocation and rotation, and purge through their separate connections; confirm each succeeds and every writer connection observes the same `max_page_count`.
 
 Receiver checks 50 and 56 require a compliant receiving client; they cannot be demonstrated by the acknowledgement endpoint alone.
 

@@ -23,6 +23,8 @@ Ovue reads TOML configuration. Finite storage and retention values are required 
 | `limits` | `max_streams_per_seat`, `max_streams_global` | Concurrent stream caps; default to 8 per seat and 128 overall. The global limit must reserve at least one stream per registered seat. |
 | `limits` | `max_unread_per_seat` | Per-seat unread limit; defaults to 100 and cannot be lower than the 10-delivery reservation. |
 | `limits` | `max_replay_events` | Maximum replay events per stream; defaults to 1,000. |
+| `limits` | `max_http_workers` | Maximum concurrent HTTP handlers, including SSE streams; defaults to 32 more than `max_streams_global` and must exceed it. Excess connections receive `503 server_busy`. |
+| `limits` | `request_timeout_seconds` | Total time allowed to receive request headers and body; defaults to 10 seconds and does not reset when bytes arrive. |
 
 Ovue reserves 15% physical SQLite headroom above the logical database limit for acknowledgements, token changes, and purge. The operator warning starts at 80% of either storage limit. Purge removes only old pointers whose deliveries are all read and trims traffic logs using their separate retention age. An optional `VACUUM` can shrink the physical file.
 

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import socket
 import ssl
 import threading
-from http.server import ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from ovue.configuration import ConfigurationError, Settings
 from ovue.modules.pointers.monitoring.operation import warn_if_near_capacity
@@ -14,6 +15,8 @@ from ovue.transports.http.application import HTTPApplication
 from ovue.transports.http.handler import OvueRequestHandler
 from ovue.transports.http.limits import RateLimiter, StreamRegistry
 
+_Request = socket.socket | tuple[bytes, socket.socket]
+
 
 class OvueHTTPServer(ThreadingHTTPServer):
     """Serve requests concurrently and share the configured module interfaces."""
@@ -21,6 +24,61 @@ class OvueHTTPServer(ThreadingHTTPServer):
     daemon_threads = False
     allow_reuse_address = True
     application: HTTPApplication
+
+    def __init__(
+        self,
+        address: tuple[str, int],
+        handler: type[BaseHTTPRequestHandler],
+        application: HTTPApplication,
+    ) -> None:
+        """Create a server with no more request workers than configured."""
+        super().__init__(address, handler)
+        self.application = application
+        self._request_slots = threading.BoundedSemaphore(
+            application.settings.max_http_workers
+        )
+
+    def process_request(
+        self,
+        request: _Request,
+        client_address: tuple[str, int],
+    ) -> None:
+        """Reject excess connections before they can create unbounded threads."""
+        if not self._request_slots.acquire(blocking=False):
+            self._reject_busy_request(request)
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._request_slots.release()
+            raise
+
+    def process_request_thread(
+        self,
+        request: _Request,
+        client_address: tuple[str, int],
+    ) -> None:
+        """Release the worker slot after the request or stream has ended."""
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._request_slots.release()
+
+    def _reject_busy_request(self, request: _Request) -> None:
+        """Return a small JSON overload response without starting a worker."""
+        response = (
+            b"HTTP/1.1 503 Service Unavailable\r\n"
+            b"Content-Type: application/json; charset=utf-8\r\n"
+            b"Content-Length: 23\r\n"
+            b"Connection: close\r\n\r\n"
+            b'{"error":"server_busy"}'
+        )
+        try:
+            connection = request[1] if isinstance(request, tuple) else request
+            connection.sendall(response)
+        except OSError:
+            pass
 
     def shutdown(self) -> None:
         """Stop active SSE loops before stopping the request-accept loop."""
@@ -31,7 +89,10 @@ class OvueHTTPServer(ThreadingHTTPServer):
 def create_server(settings: Settings) -> OvueHTTPServer:
     """Open protected stores and construct a local or TLS-protected server."""
     settings.data_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-    seats = SeatStorage(settings.database_path)
+    seats = SeatStorage(
+        settings.database_path,
+        max_logical_database_bytes=settings.max_logical_database_bytes,
+    )
     try:
         registered_count = len(seats.list_seats())
         if settings.max_streams_global < registered_count:
@@ -42,7 +103,10 @@ def create_server(settings: Settings) -> OvueHTTPServer:
             raise ConfigurationError(
                 "Global unread capacity is below registered seat reservations"
             )
-        pointers = SQLite(settings.database_path)
+        pointers = SQLite(
+            settings.database_path,
+            max_logical_database_bytes=settings.max_logical_database_bytes,
+        )
     except Exception:
         seats.close()
         raise
@@ -64,8 +128,11 @@ def create_server(settings: Settings) -> OvueHTTPServer:
     )
     server: OvueHTTPServer | None = None
     try:
-        server = OvueHTTPServer((settings.host, settings.port), OvueRequestHandler)
-        server.application = application
+        server = OvueHTTPServer(
+            (settings.host, settings.port),
+            OvueRequestHandler,
+            application,
+        )
         if settings.tls_certfile is not None and settings.tls_keyfile is not None:
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             context.load_cert_chain(settings.tls_certfile, settings.tls_keyfile)

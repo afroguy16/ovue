@@ -26,3 +26,5 @@ traffic_log_max_age_days = "FOUNDER_CONFIRM"
 max_unread_global = "FOUNDER_CONFIRM"
 send_per_minute = 60
 invalid_per_minute = 60
+max_http_workers = 160
+request_timeout_seconds = 10

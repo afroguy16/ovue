@@ -27,7 +27,9 @@ def test_new_stream_receives_unread_backlog_then_starts_after_latest_sequence(
     tmp_path: Path,
 ) -> None:
     """Send unread items first and avoid replaying older read items as live events."""
-    storage = SQLite(tmp_path / "pointers.sqlite3")
+    storage = SQLite(
+        tmp_path / "pointers.sqlite3", max_logical_database_bytes=1_000_000
+    )
     first_id = save_pointer(storage)
     save_pointer(storage)
     acknowledge(storage, first_id, recipient_id="seat_b")
@@ -47,7 +49,9 @@ def test_reconnected_stream_replays_events_after_last_event_id(
     tmp_path: Path,
 ) -> None:
     """Replay later events with stable IDs when a connection resumes."""
-    storage = SQLite(tmp_path / "pointers.sqlite3")
+    storage = SQLite(
+        tmp_path / "pointers.sqlite3", max_logical_database_bytes=1_000_000
+    )
     first_id = save_pointer(storage)
     second_id = save_pointer(storage)
 
@@ -60,7 +64,9 @@ def test_reconnected_stream_replays_events_after_last_event_id(
 
 def test_new_stream_rejects_malformed_or_negative_event_id(tmp_path: Path) -> None:
     """Reject malformed and negative resume cursors before opening the stream."""
-    storage = SQLite(tmp_path / "pointers.sqlite3")
+    storage = SQLite(
+        tmp_path / "pointers.sqlite3", max_logical_database_bytes=1_000_000
+    )
     for cursor in ("invalid", "-1"):
         with pytest.raises(ValueError):
             start_stream(storage, "seat_b", last_event_id=cursor)

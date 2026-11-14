@@ -2,7 +2,9 @@
 
 import http.client
 import json
+import socket
 import threading
+import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -19,6 +21,9 @@ def make_settings(
     *,
     send_limit: int = 60,
     invalid_limit: int = 60,
+    max_http_workers: int = 160,
+    request_timeout_seconds: int = 10,
+    max_streams_global: int = 128,
 ) -> Settings:
     """Build local test settings with bounded storage and an ephemeral port."""
     return Settings(
@@ -35,12 +40,22 @@ def make_settings(
         tls_keyfile=None,
         send_per_minute=send_limit,
         invalid_per_minute=invalid_limit,
+        max_http_workers=max_http_workers,
+        request_timeout_seconds=request_timeout_seconds,
+        max_streams_global=max_streams_global,
     )
 
 
-def create_seats(database_path: Path) -> tuple[str, str, str, str]:
+def create_seats(
+    database_path: Path,
+    *,
+    max_logical_database_bytes: int = 10_000_000,
+) -> tuple[str, str, str, str]:
     """Create sender and recipient seats and return IDs and one-time tokens."""
-    storage = SeatStorage(database_path)
+    storage = SeatStorage(
+        database_path,
+        max_logical_database_bytes=max_logical_database_bytes,
+    )
     sender, sender_token = storage.create_seat("writer", "Ese", "Writer")
     recipient, recipient_token = storage.create_seat("reviewer", "Ari", "Reviewer")
     storage.close()
@@ -54,7 +69,8 @@ def http_server(
     """Run the local server in a background thread and close it after a test."""
     settings = make_settings(tmp_path)
     sender_id, sender_token, recipient_id, recipient_token = create_seats(
-        settings.database_path
+        settings.database_path,
+        max_logical_database_bytes=settings.max_logical_database_bytes,
     )
     server = create_server(settings)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -254,6 +270,52 @@ def test_http_parser_errors_use_json_without_echoing_the_request(
     assert "a=1" not in json.dumps(error)
 
 
+def test_http_server_bounds_workers_and_expires_slow_request_headers(
+    tmp_path: Path,
+) -> None:
+    """Reject overload and free workers when a peer exceeds the request deadline."""
+    settings = make_settings(
+        tmp_path,
+        max_http_workers=3,
+        request_timeout_seconds=1,
+        max_streams_global=2,
+    )
+    create_seats(
+        settings.database_path,
+        max_logical_database_bytes=settings.max_logical_database_bytes,
+    )
+    server = create_server(settings)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    slow_connections: list[socket.socket] = []
+    try:
+        for _ in range(settings.max_http_workers):
+            address = server.server_address
+            connection = socket.create_connection(
+                (str(address[0]), int(address[1])),
+                timeout=2,
+            )
+            connection.sendall(b"GET /seats HTTP/1.1\r\nHost:")
+            slow_connections.append(connection)
+
+        status, body = request(server, "GET", "/seats", token="invalid-token")
+        assert status == 503
+        assert body == {"error": "server_busy"}
+
+        time.sleep(settings.request_timeout_seconds + 0.1)
+        status, body = request(server, "GET", "/seats", token="invalid-token")
+        assert status == 401
+        assert body == {"error": "unauthorized"}
+    finally:
+        for connection in slow_connections:
+            connection.close()
+        server.shutdown()
+        server.server_close()
+        server.application.pointers.close()
+        server.application.seats.close()
+        thread.join(timeout=2)
+
+
 def test_http_validation_errors_include_relevant_limits_without_echoing_values(
     http_server: Any,
 ) -> None:
@@ -274,7 +336,10 @@ def test_http_validation_errors_include_relevant_limits_without_echoing_values(
 def test_http_rejects_oversized_body_and_rate_limits_sends(tmp_path: Path) -> None:
     """Return 413 for oversized requests and 429 when a seat exceeds its send rate."""
     settings = make_settings(tmp_path, send_limit=3)
-    _, sender_token, recipient_id, _ = create_seats(settings.database_path)
+    _, sender_token, recipient_id, _ = create_seats(
+        settings.database_path,
+        max_logical_database_bytes=settings.max_logical_database_bytes,
+    )
     server = create_server(settings)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -318,7 +383,10 @@ def test_http_tracks_invalid_sends_separately_from_valid_send_rate(
 ) -> None:
     """Rate-limit repeated invalid payloads without blocking a valid send early."""
     settings = make_settings(tmp_path, send_limit=10, invalid_limit=1)
-    _, sender_token, recipient_id, _ = create_seats(settings.database_path)
+    _, sender_token, recipient_id, _ = create_seats(
+        settings.database_path,
+        max_logical_database_bytes=settings.max_logical_database_bytes,
+    )
     server = create_server(settings)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -470,7 +538,10 @@ def test_revoking_a_token_closes_its_open_stream(http_server: Any) -> None:
     )
     response = connection.getresponse()
     assert response.status == 200
-    revoker = SeatStorage(server.application.settings.database_path)
+    revoker = SeatStorage(
+        server.application.settings.database_path,
+        max_logical_database_bytes=server.application.settings.max_logical_database_bytes,
+    )
     revoker.revoke_token(recipient_id)
     revoker.close()
 

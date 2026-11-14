@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
-import math
 import sqlite3
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
+
+from ovue.database import apply_physical_page_limit
 
 
 @dataclass(frozen=True)
@@ -64,7 +65,12 @@ class CapacityReached(Exception):
 class SQLite:
     """Own pointer persistence and atomic send capacity checks."""
 
-    def __init__(self, database_path: Path) -> None:
+    def __init__(
+        self,
+        database_path: Path,
+        *,
+        max_logical_database_bytes: int,
+    ) -> None:
         """Open the database and create the tables required by pointer sending."""
         self._connection = sqlite3.connect(
             database_path,
@@ -73,7 +79,15 @@ class SQLite:
         )
         self._connection.row_factory = sqlite3.Row
         self._lock = threading.RLock()
-        self._create_schema()
+        try:
+            self._create_schema()
+            apply_physical_page_limit(
+                self._connection,
+                max_logical_database_bytes,
+            )
+        except Exception:
+            self._connection.close()
+            raise
 
     def _create_schema(self) -> None:
         """Create normalized pointer, delivery, and traffic-log tables."""
@@ -146,7 +160,10 @@ class SQLite:
             # BEGIN IMMEDIATE prevents concurrent sends from racing on capacity.
             self._connection.execute("BEGIN IMMEDIATE")
             try:
-                self._set_physical_page_limit(max_logical_database_bytes)
+                apply_physical_page_limit(
+                    self._connection,
+                    max_logical_database_bytes,
+                )
                 self._check_storage_capacity(
                     max_pointer_records,
                     max_logical_database_bytes,
@@ -177,13 +194,6 @@ class SQLite:
                 if self._connection.in_transaction:
                     self._connection.execute("ROLLBACK")
                 raise
-
-    def _set_physical_page_limit(self, logical_limit_bytes: int) -> None:
-        """Reserve 15 percent physical headroom for recovery and maintenance writes."""
-        page_size = int(self._connection.execute("PRAGMA page_size").fetchone()[0])
-        physical_limit_bytes = math.ceil(logical_limit_bytes * 1.15)
-        max_pages = math.ceil(physical_limit_bytes / page_size)
-        self._connection.execute(f"PRAGMA max_page_count = {max_pages}")
 
     def _check_storage_capacity(
         self,

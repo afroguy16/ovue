@@ -42,6 +42,8 @@ class Settings:
     max_streams_global: int = 128
     max_unread_per_seat: int = 100
     max_replay_events: int = 1000
+    max_http_workers: int = 160
+    request_timeout_seconds: int = 10
 
     @property
     def database_path(self) -> Path:
@@ -96,6 +98,9 @@ def load_settings(config_path: Path) -> Settings:
 
     certfile = _optional_path(server.get("tls_certfile"), "server.tls_certfile")
     keyfile = _optional_path(server.get("tls_keyfile"), "server.tls_keyfile")
+    max_streams_global = _positive_int(
+        limits.get("max_streams_global", 128), "limits.max_streams_global"
+    )
     settings = Settings(
         allowed_hosts=allowed_hosts,
         data_dir=data_dir,
@@ -134,9 +139,7 @@ def load_settings(config_path: Path) -> Settings:
             limits.get("max_streams_per_seat", 8),
             "limits.max_streams_per_seat",
         ),
-        max_streams_global=_positive_int(
-            limits.get("max_streams_global", 128), "limits.max_streams_global"
-        ),
+        max_streams_global=max_streams_global,
         max_unread_per_seat=_positive_int(
             limits.get("max_unread_per_seat", 100),
             "limits.max_unread_per_seat",
@@ -144,12 +147,24 @@ def load_settings(config_path: Path) -> Settings:
         max_replay_events=_positive_int(
             limits.get("max_replay_events", 1000), "limits.max_replay_events"
         ),
+        max_http_workers=_positive_int(
+            limits.get("max_http_workers", max_streams_global + 32),
+            "limits.max_http_workers",
+        ),
+        request_timeout_seconds=_positive_int(
+            limits.get("request_timeout_seconds", 10),
+            "limits.request_timeout_seconds",
+        ),
     )
     if settings.max_body_bytes > 4096:
         raise ConfigurationError("limits.max_body_bytes cannot exceed 4096")
     if settings.max_unread_per_seat < 10:
         raise ConfigurationError(
             "limits.max_unread_per_seat must reserve ten deliveries"
+        )
+    if settings.max_http_workers <= settings.max_streams_global:
+        raise ConfigurationError(
+            "limits.max_http_workers must exceed limits.max_streams_global"
         )
     if not settings.local_deployment and (certfile is None or keyfile is None):
         raise ConfigurationError("Non-local listeners require TLS certificate and key")

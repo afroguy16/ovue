@@ -15,7 +15,9 @@ def test_traffic_history_contains_the_pointer_and_sender_fields(
     tmp_path: Path,
 ) -> None:
     """Expose the recorded pointer fields without interpreting their contents."""
-    storage = SQLite(tmp_path / "pointers.sqlite3")
+    storage = SQLite(
+        tmp_path / "pointers.sqlite3", max_logical_database_bytes=1_000_000
+    )
     send(
         Payload(
             ("seat_b",),
@@ -50,7 +52,9 @@ def test_traffic_history_rejects_unbounded_page_sizes(
     tmp_path: Path,
 ) -> None:
     """Keep operator traffic output within the configured maximum page size."""
-    storage = SQLite(tmp_path / "pointers.sqlite3")
+    storage = SQLite(
+        tmp_path / "pointers.sqlite3", max_logical_database_bytes=1_000_000
+    )
 
     with pytest.raises(ValueError, match="between 1 and 1000"):
         read_traffic(storage, limit=limit)

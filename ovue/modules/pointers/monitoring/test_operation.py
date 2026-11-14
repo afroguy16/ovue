@@ -15,7 +15,9 @@ def test_storage_warning_is_emitted_at_eighty_percent_of_record_limit(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Warn the operator when the pointer count reaches its configured threshold."""
-    storage = SQLite(tmp_path / "pointers.sqlite3")
+    storage = SQLite(
+        tmp_path / "pointers.sqlite3", max_logical_database_bytes=1_000_000
+    )
     send(
         Payload(("seat_b",), "https://work.example.org/i/1", None, "Ready", "done"),
         sender=Sender("seat_a", "Ari", "Writer"),

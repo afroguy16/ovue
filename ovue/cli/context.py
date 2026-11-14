@@ -28,9 +28,15 @@ def open_stores(config_path: Path) -> Iterator[Stores]:
     """Open protected local stores and close both connections after a command."""
     settings = load_settings(config_path)
     _prepare_owned_directory(settings.data_dir, settings.database_path)
-    seats = SeatStorage(settings.database_path)
+    seats = SeatStorage(
+        settings.database_path,
+        max_logical_database_bytes=settings.max_logical_database_bytes,
+    )
     try:
-        pointers = SQLite(settings.database_path)
+        pointers = SQLite(
+            settings.database_path,
+            max_logical_database_bytes=settings.max_logical_database_bytes,
+        )
     except Exception:
         seats.close()
         raise

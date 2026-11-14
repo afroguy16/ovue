@@ -50,7 +50,9 @@ def test_send_creates_one_pointer_and_one_delivery_per_unique_recipient(
     tmp_path: Path,
 ) -> None:
     """Save one pointer and one delivery for each different recipient seat."""
-    storage = SQLite(tmp_path / "pointers.sqlite3")
+    storage = SQLite(
+        tmp_path / "pointers.sqlite3", max_logical_database_bytes=1_000_000
+    )
 
     result = send(
         make_payload(("seat_b", "seat_c", "seat_b")),
@@ -70,7 +72,9 @@ def test_send_rejects_full_inbox_without_creating_partial_deliveries(
     tmp_path: Path,
 ) -> None:
     """Save nothing when one recipient's inbox is full, even if another has room."""
-    storage = SQLite(tmp_path / "pointers.sqlite3")
+    storage = SQLite(
+        tmp_path / "pointers.sqlite3", max_logical_database_bytes=1_000_000
+    )
     sender = Sender(id="seat_a", display_name="Ari", role="Writer")
     known_seat_ids = {"seat_a", "seat_b", "seat_c"}
     policy = make_policy()
@@ -101,7 +105,9 @@ def test_send_rejects_full_inbox_without_creating_partial_deliveries(
 
 def test_send_rejects_storage_limit_without_writing_rows(tmp_path: Path) -> None:
     """Save no more pointers after the database reaches its pointer limit."""
-    storage = SQLite(tmp_path / "pointers.sqlite3")
+    storage = SQLite(
+        tmp_path / "pointers.sqlite3", max_logical_database_bytes=1_000_000
+    )
     sender = Sender(id="seat_a", display_name="Ari", role="Writer")
     known_seat_ids = {"seat_a", "seat_b"}
     policy = make_policy(max_pointer_records=2)
@@ -134,7 +140,9 @@ def test_send_rolls_back_if_resulting_sqlite_pages_exceed_logical_limit(
     tmp_path: Path,
 ) -> None:
     """Keep the logical-size cap even when an accepted write needs new pages."""
-    storage = SQLite(tmp_path / "pointers.sqlite3")
+    storage = SQLite(
+        tmp_path / "pointers.sqlite3", max_logical_database_bytes=1_000_000
+    )
     sender = Sender(id="seat_a", display_name="Ari", role="Writer")
     policy = make_policy(max_logical_database_bytes=65_000)
     recipients = tuple(f"seat_{index}" for index in range(10))
@@ -167,8 +175,8 @@ def test_concurrent_sends_do_not_exceed_the_pointer_record_limit(
 ) -> None:
     """Serialize concurrent capacity checks so only one send uses the last slot."""
     database_path = tmp_path / "pointers.sqlite3"
-    first_storage = SQLite(database_path)
-    second_storage = SQLite(database_path)
+    first_storage = SQLite(database_path, max_logical_database_bytes=1_000_000)
+    second_storage = SQLite(database_path, max_logical_database_bytes=1_000_000)
     sender = Sender(id="seat_a", display_name="Ari", role="Writer")
     policy = make_policy(max_pointer_records=1)
     barrier = Barrier(2)
@@ -202,10 +210,10 @@ def test_global_unread_limit_preserves_each_registered_seats_reservation(
 ) -> None:
     """Keep ten unread slots available to every other registered seat."""
     database_path = tmp_path / "pointers.sqlite3"
-    seats = SeatStorage(database_path)
+    seats = SeatStorage(database_path, max_logical_database_bytes=1_000_000)
     first, _ = seats.create_seat("writer", "Ese", "Writer")
     second, _ = seats.create_seat("reviewer", "Ari", "Reviewer")
-    storage = SQLite(database_path)
+    storage = SQLite(database_path, max_logical_database_bytes=1_000_000)
     policy = make_policy(
         max_pointer_records=100,
         max_unread_per_seat=100,
@@ -250,10 +258,16 @@ def test_acknowledgement_token_revoke_and_purge_work_at_storage_limit(
 ) -> None:
     """Keep recovery operations available when pointer sends reach the logical cap."""
     database_path = tmp_path / "pointers.sqlite3"
-    seats = SeatStorage(database_path)
+    seats = SeatStorage(
+        database_path,
+        max_logical_database_bytes=200_000,
+    )
     sender_seat, _ = seats.create_seat("writer", "Ese", "Writer")
     recipient_seat, _ = seats.create_seat("reviewer", "Ari", "Reviewer")
-    storage = SQLite(database_path)
+    storage = SQLite(
+        database_path,
+        max_logical_database_bytes=200_000,
+    )
     sender = Sender(sender_seat.id, sender_seat.display_name, sender_seat.role)
     known_seat_ids = {sender_seat.id, recipient_seat.id}
     policy = make_policy(
@@ -286,6 +300,19 @@ def test_acknowledgement_token_revoke_and_purge_work_at_storage_limit(
     assert storage.capacity_usage().logical_database_bytes <= 200_000
     acknowledge(storage, pending_delivery_id, recipient_id=recipient_seat.id)
     seats.revoke_token(sender_seat.id)
+    replacement_token = seats.rotate_token(sender_seat.id)
+    assert seats.authenticate(replacement_token).id == sender_seat.id
+    seat_page_limit = int(
+        seats._connection.execute("PRAGMA max_page_count").fetchone()[0]
+    )
+    pointer_page_limit = int(
+        storage._connection.execute("PRAGMA max_page_count").fetchone()[0]
+    )
+    assert seat_page_limit == pointer_page_limit
+    page_count = int(storage._connection.execute("PRAGMA page_count").fetchone()[0])
+    page_size = int(storage._connection.execute("PRAGMA page_size").fetchone()[0])
+    assert page_count <= seat_page_limit
+    assert database_path.stat().st_size <= seat_page_limit * page_size
     storage.purge(
         pointer_age_days=1,
         log_age_days=1,

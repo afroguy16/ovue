@@ -31,7 +31,9 @@ def test_inbox_returns_unread_and_read_deliveries_with_opaque_paging(
     tmp_path: Path,
 ) -> None:
     """Return deliveries in sequence order and provide a cursor for the next page."""
-    storage = SQLite(tmp_path / "pointers.sqlite3")
+    storage = SQLite(
+        tmp_path / "pointers.sqlite3", max_logical_database_bytes=1_000_000
+    )
     sender = Sender("seat_a", "Ari", "Writer")
     for _ in range(3):
         send(
@@ -57,7 +59,9 @@ def test_inbox_filter_selects_unread_or_acknowledged_deliveries(
     tmp_path: Path,
 ) -> None:
     """Return only the requested state while leaving default inbox behavior intact."""
-    storage = SQLite(tmp_path / "pointers.sqlite3")
+    storage = SQLite(
+        tmp_path / "pointers.sqlite3", max_logical_database_bytes=1_000_000
+    )
     sender = Sender("seat_a", "Ari", "Writer")
     result = send(
         make_payload(),
@@ -88,7 +92,9 @@ def test_inbox_filter_selects_unread_or_acknowledged_deliveries(
 @pytest.mark.parametrize("limit", [0, 101])
 def test_inbox_rejects_limits_outside_the_contract(limit: int, tmp_path: Path) -> None:
     """Reject a page size below one or above the maximum of one hundred."""
-    storage = SQLite(tmp_path / "pointers.sqlite3")
+    storage = SQLite(
+        tmp_path / "pointers.sqlite3", max_logical_database_bytes=1_000_000
+    )
     with pytest.raises(ValueError):
         get_inbox(storage, "seat_b", limit=limit)
     storage.close()

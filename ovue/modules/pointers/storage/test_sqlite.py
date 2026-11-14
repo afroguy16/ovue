@@ -8,7 +8,7 @@ from ovue.modules.pointers.storage.sqlite import PointerRecord, SQLite
 def test_persist_send_stores_pointer_delivery_and_log_rows(tmp_path: Path) -> None:
     """Save the pointer, its recipient delivery, and one traffic log entry."""
     database_path = tmp_path / "pointers.sqlite3"
-    storage = SQLite(database_path)
+    storage = SQLite(database_path, max_logical_database_bytes=1_000_000)
     pointer = PointerRecord(
         sender_id="seat_a",
         sender_display_name="Ari",
@@ -37,7 +37,7 @@ def test_persist_send_stores_pointer_delivery_and_log_rows(tmp_path: Path) -> No
 def test_persisted_rows_survive_reopening_the_database(tmp_path: Path) -> None:
     """Keep saved pointer details after closing and reopening the database."""
     database_path = tmp_path / "pointers.sqlite3"
-    storage = SQLite(database_path)
+    storage = SQLite(database_path, max_logical_database_bytes=1_000_000)
     pointer = PointerRecord(
         sender_id="seat_a",
         sender_display_name="Ari",
@@ -56,7 +56,7 @@ def test_persisted_rows_survive_reopening_the_database(tmp_path: Path) -> None:
     )
     storage.close()
 
-    reopened = SQLite(database_path)
+    reopened = SQLite(database_path, max_logical_database_bytes=1_000_000)
 
     assert reopened.snapshot() == (1, 1, 1)
     reopened.close()

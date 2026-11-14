@@ -22,6 +22,8 @@ acknowledged_pointer_max_age_days = 30
 traffic_log_max_age_days = 90
 [limits]
 max_unread_global = 1000
+max_http_workers = 160
+request_timeout_seconds = 10
 [server]
 host = "{host}"
 """,
@@ -39,6 +41,24 @@ def test_load_settings_uses_the_configured_data_directory(tmp_path: Path) -> Non
     assert settings.database_path.name == "ovue.sqlite3"
     assert settings.max_pointer_records == 1000
     assert settings.max_logical_database_bytes == 10_485_760
+    assert settings.max_http_workers == 160
+    assert settings.request_timeout_seconds == 10
+
+
+def test_load_settings_requires_worker_capacity_beyond_stream_capacity(
+    tmp_path: Path,
+) -> None:
+    """Reserve at least one HTTP worker for requests outside long-lived streams."""
+    config = write_config(tmp_path)
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            "max_http_workers = 160", "max_http_workers = 128"
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="must exceed"):
+        load_settings(config)
 
 
 def test_load_settings_requires_storage_and_retention_estimates(tmp_path: Path) -> None:

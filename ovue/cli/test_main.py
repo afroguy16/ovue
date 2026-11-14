@@ -83,7 +83,9 @@ def test_seat_creation_refuses_to_emit_a_token_to_non_terminal_output(
     assert error.value.code == 2
     assert "requires an operator-controlled terminal" in errors.getvalue()
     assert output.getvalue() == ""
-    store = SeatStorage(tmp_path / "data" / "ovue.sqlite3")
+    store = SeatStorage(
+        tmp_path / "data" / "ovue.sqlite3", max_logical_database_bytes=10_000_000
+    )
     assert store.list_seats() == ()
     store.close()
 
@@ -121,7 +123,9 @@ def test_cli_creates_lists_and_rotates_a_seat_token_once(tmp_path: Path) -> None
         output=rotated,
     )
     new_token = rotated.getvalue().split(": ", maxsplit=1)[1].strip()
-    store = SeatStorage(tmp_path / "data" / "ovue.sqlite3")
+    store = SeatStorage(
+        tmp_path / "data" / "ovue.sqlite3", max_logical_database_bytes=10_000_000
+    )
     assert store.authenticate(new_token).id == seat_id
     with pytest.raises(PermissionError):
         store.authenticate(old_token)
@@ -175,9 +179,13 @@ def test_operator_commands_send_read_acknowledge_log_and_purge(
         json.loads(founder_send.getvalue())["deliveries"][0]["recipient_id"] == seat_id
     )
 
-    seats = SeatStorage(tmp_path / "data" / "ovue.sqlite3")
+    seats = SeatStorage(
+        tmp_path / "data" / "ovue.sqlite3", max_logical_database_bytes=10_000_000
+    )
     sender = seats.authenticate(seat_data["token"])
-    pointers = SQLite(tmp_path / "data" / "ovue.sqlite3")
+    pointers = SQLite(
+        tmp_path / "data" / "ovue.sqlite3", max_logical_database_bytes=10_000_000
+    )
     send(
         Payload(
             ("operator",),

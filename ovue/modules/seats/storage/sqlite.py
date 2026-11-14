@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
+from ovue.database import apply_physical_page_limit
 from ovue.modules.seats.entities import AuthenticatedSeat, Seat
 from ovue.modules.seats.handles.validation import normalize_handle
 
@@ -19,7 +20,12 @@ from ovue.modules.seats.handles.validation import normalize_handle
 class SeatStorage:
     """Own seat and token persistence for one Ovue database."""
 
-    def __init__(self, database_path: Path) -> None:
+    def __init__(
+        self,
+        database_path: Path,
+        *,
+        max_logical_database_bytes: int,
+    ) -> None:
         """Open a private database and create the seat tables if needed."""
         database_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chmod(database_path.parent, 0o700)
@@ -36,7 +42,15 @@ class SeatStorage:
         os.chmod(database_path, 0o600)
         self._connection.row_factory = sqlite3.Row
         self._lock = threading.RLock()
-        self._create_schema()
+        try:
+            self._create_schema()
+            apply_physical_page_limit(
+                self._connection,
+                max_logical_database_bytes,
+            )
+        except Exception:
+            self._connection.close()
+            raise
 
     def _create_schema(self) -> None:
         """Create the registered-seat and current-token tables."""
