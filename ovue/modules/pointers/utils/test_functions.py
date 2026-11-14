@@ -7,7 +7,6 @@ from ovue.modules.pointers.utils.functions import (
 )
 
 
-# Keep the first copy of each value and leave the values in their original order.
 def test_unique_in_order_removes_duplicates_without_reordering() -> None:
     """Remove repeated values while keeping the first one's position."""
     assert unique_in_order(("seat_b", "seat_a", "seat_b")) == (
@@ -16,7 +15,6 @@ def test_unique_in_order_removes_duplicates_without_reordering() -> None:
     )
 
 
-# Check that a valid web address can be split into its parts.
 def test_split_url_returns_parts_for_valid_url() -> None:
     """Return the scheme, host, and path from a valid web address."""
     parts = split_url("https://work.example.org/items/42")
@@ -27,19 +25,16 @@ def test_split_url_returns_parts_for_valid_url() -> None:
     assert parts.path == "/items/42"
 
 
-# Check that an invalid web address returns no result instead of an error.
 def test_split_url_returns_none_for_malformed_url() -> None:
     """Return no result for an invalid web address instead of raising an error."""
     assert split_url("https://[invalid") is None
 
 
-# Check that standard visible keyboard characters are allowed in descriptions.
 def test_is_printable_ascii_accepts_visible_characters() -> None:
     """Allow visible standard keyboard characters in a description."""
     assert is_printable_ascii("Ready for review ~")
 
 
-# Check that line breaks and characters outside standard ASCII are rejected.
 def test_is_printable_ascii_rejects_controls_and_non_ascii() -> None:
     """Reject line breaks and characters outside standard ASCII."""
     assert not is_printable_ascii("Ready\nfor review")

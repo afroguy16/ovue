@@ -1,0 +1,28 @@
+# Copy this file to ~/.config/ovue/config.toml and confirm the proposed
+# storage and retention values before the first run.
+
+[reference]
+# Exact hostnames only. Replace this example with the hosts your seats use.
+allowed_hosts = ["app.notion.com"]
+
+[server]
+host = "127.0.0.1"
+port = 8765
+data_dir = "~/.local/share/ovue"
+
+[storage]
+# Replace each placeholder with a confirmed finite value before first startup.
+# Current proposals, not measured defaults: 100000 records and 268435456 bytes.
+max_pointer_records = "FOUNDER_CONFIRM"
+max_logical_database_bytes = "FOUNDER_CONFIRM"
+
+[retention]
+# Current proposals, not measured defaults: 30 and 90 days.
+acknowledged_pointer_max_age_days = "FOUNDER_CONFIRM"
+traffic_log_max_age_days = "FOUNDER_CONFIRM"
+
+[limits]
+# Current proposal: 1000. Choose a finite total at least 10 per registered seat.
+max_unread_global = "FOUNDER_CONFIRM"
+send_per_minute = 60
+invalid_per_minute = 60

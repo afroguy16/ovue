@@ -1,0 +1,1 @@
+"""Acknowledge individual recipient deliveries."""

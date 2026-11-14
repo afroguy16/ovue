@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
+import unicodedata
 from dataclasses import dataclass
 
 from ovue.modules.pointers.utils.functions import (
@@ -33,6 +34,7 @@ class Policy:
     max_logical_database_bytes: int
     max_unread_per_seat: int
     local_deployment: bool = False
+    max_unread_global: int = 1000
 
 
 @dataclass(frozen=True)
@@ -42,6 +44,7 @@ class Issue:
     code: str
     message: str
     path: tuple[str | int, ...]
+    max_value: int | None = None
 
 
 class IssueRejected(Exception):
@@ -72,7 +75,12 @@ def validate(
         issues.append(Issue("required", "At least one recipient is required", ("to",)))
     if len(payload.to) > 10:
         issues.append(
-            Issue("too_many_recipients", "At most 10 recipients are allowed", ("to",))
+            Issue(
+                "too_many_recipients",
+                "At most 10 recipients are allowed",
+                ("to",),
+                10,
+            )
         )
     for recipient_id in recipients:
         if recipient_id == sender_id:
@@ -88,7 +96,12 @@ def validate(
     if payload.ref_title is not None:
         if len(payload.ref_title) > 12:
             issues.append(
-                Issue("too_long", "Title exceeds 12 characters", ("ref", "title"))
+                Issue(
+                    "too_long",
+                    "Title exceeds 12 characters",
+                    ("ref", "title"),
+                    12,
+                )
             )
         if not _TITLE_PATTERN.fullmatch(payload.ref_title):
             issues.append(
@@ -102,7 +115,12 @@ def validate(
         issues.append(Issue("required", "Description is required", ("description",)))
     if len(payload.description) > 120:
         issues.append(
-            Issue("too_long", "Description exceeds 120 characters", ("description",))
+            Issue(
+                "too_long",
+                "Description exceeds 120 characters",
+                ("description",),
+                120,
+            )
         )
     if not is_printable_ascii(payload.description):
         issues.append(
@@ -126,8 +144,14 @@ def _reference_issues(value: str, policy: Policy) -> list[Issue]:
     """Return safe issues for a reference URL without echoing its contents."""
     issues: list[Issue] = []
     if len(value) > 2048:
-        issues.append(Issue("too_long", "URL exceeds 2048 characters", ("ref", "url")))
+        issues.append(
+            Issue("too_long", "URL exceeds 2048 characters", ("ref", "url"), 2048)
+        )
 
+    if any(unicodedata.category(character).startswith("C") for character in value):
+        issues.append(
+            Issue("invalid_url", "URL contains unsupported characters", ("ref", "url"))
+        )
     parsed = split_url(value)
     if parsed is None:
         return [*issues, Issue("invalid_url", "URL is invalid", ("ref", "url"))]
@@ -138,11 +162,8 @@ def _reference_issues(value: str, policy: Policy) -> list[Issue]:
         return [*issues, Issue("invalid_url", "URL is invalid", ("ref", "url"))]
 
     normalized_host = hostname.lower() if hostname is not None else ""
-    allowed_http_localhost = (
-        policy.local_deployment
-        and parsed.scheme == "http"
-        and normalized_host == "localhost"
-    )
+    local_reference_host = policy.local_deployment and normalized_host == "localhost"
+    allowed_http_localhost = local_reference_host and parsed.scheme == "http"
     if parsed.scheme != "https" and not allowed_http_localhost:
         issues.append(Issue("invalid_scheme", "Must be https", ("ref", "url")))
     if not parsed.scheme or not parsed.netloc or hostname is None:
@@ -157,7 +178,7 @@ def _reference_issues(value: str, policy: Policy) -> list[Issue]:
                 ("ref", "url"),
             )
         )
-    if parsed.query or parsed.fragment:
+    if "?" in value or "#" in value:
         issues.append(
             Issue(
                 "query_or_fragment_not_allowed",
@@ -178,7 +199,7 @@ def _reference_issues(value: str, policy: Policy) -> list[Issue]:
         is_ip_literal = True
     if is_ip_literal or normalized_host.endswith(".") or "xn--" in normalized_host:
         issues.append(Issue("invalid_host", "URL host is not allowed", ("ref", "url")))
-    elif not allowed_http_localhost and normalized_host not in policy.allowed_hosts:
+    elif not local_reference_host and normalized_host not in policy.allowed_hosts:
         issues.append(
             Issue("host_not_allowed", "URL host is not allowed", ("ref", "url"))
         )

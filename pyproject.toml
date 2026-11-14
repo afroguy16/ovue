@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ovue"
 version = "0.1.0"
-description = "A provider-agnostic message channel for agent seats."
+description = "A provider-agnostic message-pointer service for agent seats."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []

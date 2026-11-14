@@ -5,7 +5,6 @@ from pathlib import Path
 from ovue.modules.pointers.storage.sqlite import PointerRecord, SQLite
 
 
-# Check that saving a pointer also saves its recipient delivery and log entry.
 def test_persist_send_stores_pointer_delivery_and_log_rows(tmp_path: Path) -> None:
     """Save the pointer, its recipient delivery, and one traffic log entry."""
     database_path = tmp_path / "pointers.sqlite3"
@@ -35,7 +34,6 @@ def test_persist_send_stores_pointer_delivery_and_log_rows(tmp_path: Path) -> No
     storage.close()
 
 
-# Check that saved pointers are still present after reopening the database.
 def test_persisted_rows_survive_reopening_the_database(tmp_path: Path) -> None:
     """Keep saved pointer details after closing and reopening the database."""
     database_path = tmp_path / "pointers.sqlite3"

@@ -39,6 +39,27 @@ pointers/
 ├── storage/
 │   ├── sqlite.py
 │   └── test_sqlite.py
+├── inbox/
+│   ├── operation.py
+│   └── test_operation.py
+├── acknowledgement/
+│   ├── operation.py
+│   └── test_operation.py
+├── replay/
+│   ├── operation.py
+│   └── test_operation.py
+├── stream/
+│   ├── operation.py
+│   └── test_operation.py
+├── traffic/
+│   ├── operation.py
+│   └── test_operation.py
+├── purge/
+│   ├── operation.py
+│   └── test_operation.py
+├── monitoring/
+│   ├── operation.py
+│   └── test_operation.py
 └── utils/
     ├── functions.py
     └── test_functions.py
@@ -46,48 +67,32 @@ pointers/
 
 ```mermaid
 flowchart LR
-    subgraph Adapters[Outside this module]
-        direction TB
-        HTTP["(a) HTTP transport"]
-        CLI["(b) Local admin CLI"]
-        Seats["(c) Seats interface<br/>sender identity and recipient lookup"]
-    end
-
     subgraph PointerModule[Pointers module]
-        Send["(d) Send pointer operation"]
-        Validate["(e) Validate fields<br/>deduplicate recipients"]
-        Transaction["(f) BEGIN IMMEDIATE<br/>check storage and inbox capacity"]
-        Persist["(g) Write pointer,<br/>deliveries, and traffic rows"]
-        DB[("(h) SQLite")]
-        Other["(i) Inbox, replay, ack,<br/>traffic read, and purge"]
-
-        Send --> Validate --> Transaction --> Persist --> DB
-        Other -. planned operations .-> DB
+        Send["(a) Send"] --> Validate["(b) Validate pointer and recipients"]
+        Validate --> Store["(c) Pointer storage and transactions"]
+        Inbox["(d) Read inbox pages"] --> Store
+        Replay["(e) Replay events and unread backlog"] --> Store
+        Ack["(f) Mark one delivery read"] --> Store
+        History["(g) Read traffic and purge old records"] --> Store
+        Store --> Database[("(h) SQLite pointer data")]
     end
 
-    HTTP --> Send
-    CLI --> Send
-    Seats --> Send
-
-    classDef partial fill:#fef3c7,stroke:#d97706,color:#78350f;
-    classDef todo fill:#e5e7eb,stroke:#6b7280,color:#374151;
-    class Send,Validate,Transaction,Persist,DB partial;
-    class HTTP,CLI,Seats,Other todo;
+    classDef complete fill:#dcfce7,stroke:#16a34a,color:#14532d;
+    class Send,Validate,Store,Inbox,Replay,Ack,History,Database complete;
 ```
 
-**Implementation status:** 🟨 Partial · ⬜ Not started. Amber marks the send path currently implemented and tested; gray marks adapters, the seats interface, and pointer operations not yet implemented.
+**Implementation status:** 🟩 Implemented · 🟨 Partially implemented · ⬜ Not started. Green marks pointer operations present in this feature branch; the repository-level specification tracks transport and seat responsibilities separately. Color indicates implementation, not that every acceptance check or deployment scenario has been verified.
 
 | Box | Responsibility |
 | --- | --- |
-| (a) HTTP transport | Passes an authenticated send request to the module and returns its result. |
-| (b) Local admin CLI | Passes operator send requests to the module. |
-| (c) Seats interface | Supplies authenticated sender identity and recipient IDs. |
-| (d) Send pointer operation | Coordinates validation and durable creation of one pointer and its deliveries. |
-| (e) Validation | Checks pointer fields and recipient rules, then collapses duplicate recipient IDs. |
-| (f) Send transaction | Serializes storage and unread-inbox capacity checks with pointer creation. |
-| (g) Persistence writes | Stores the pointer, one delivery per recipient, and corresponding traffic records atomically. |
-| (h) SQLite | Stores pointer, delivery, and traffic-log data for the send slice. |
-| (i) Other operations | Inbox, event replay, acknowledgement, traffic-log reading, and purge remain to be implemented. |
+| (a) Send | Coordinates validation, capacity checks, and durable creation of a pointer and deliveries. |
+| (b) Validation | Checks pointer fields and recipient rules, then collapses duplicate recipient IDs. |
+| (c) Pointer storage | Serializes capacity checks and stores the pointer, deliveries, event sequences, and traffic rows atomically. |
+| (d) Inbox | Returns the recipient's read or unread pointer deliveries in paginated sequence order. |
+| (e) Replay | Returns unread startup backlog and retained events after a recipient cursor. |
+| (f) Acknowledgement | Changes only the addressed recipient's delivery state to `read`; repeats are harmless. |
+| (g) Traffic and purge | Reads operator traffic history and removes eligible pointers and expired log rows. |
+| (h) SQLite | Persists pointer records, per-recipient delivery state, event sequences, and traffic rows. |
 
 ## State and consistency
 

@@ -42,6 +42,7 @@ ovue/                         # standalone project and repository root
 ├── spec.md                   # implementation specification
 └── ovue/                     # importable Python package
     ├── __init__.py
+    ├── configuration.py
     ├── modules/
     │   ├── pointers/
     │   └── seats/
@@ -67,15 +68,15 @@ flowchart LR
         end
 
         subgraph Modules["Modules"]
-            Pointer["(c) Pointer operations<br/>send slice"]
-            Auth["(d) Seats module<br/>identity and recipient lookup"]
-            Store["(e) Pointer persistence<br/>send writes"]
-            Log["(f) Traffic log<br/>send records"]
+            Pointer["(c) Pointer operations<br/>send, inbox, replay, ack, traffic, purge"]
+            Auth["(d) Seats module<br/>identity, handles, and tokens"]
+            Store["(e) Pointer persistence<br/>deliveries and event sequences"]
+            Log["(f) Traffic log<br/>pointer history and state"]
             Pointer --> Store
             Pointer --> Log
         end
 
-        SQLite[("(g) SQLite<br/>pointer slice")]
+        SQLite[("(g) SQLite<br/>pointers, seats, and traffic")]
         Store --> SQLite
         Log --> SQLite
         Auth --> SQLite
@@ -87,29 +88,26 @@ flowchart LR
     HTTP --> Auth
     Admin --> Pointer
     Admin --> Auth
-    Admin --> Log
 
-    classDef partial fill:#fef3c7,stroke:#d97706,color:#78350f;
-    classDef todo fill:#e5e7eb,stroke:#6b7280,color:#374151;
+    classDef complete fill:#dcfce7,stroke:#16a34a,color:#14532d;
     classDef external fill:#dbeafe,stroke:#2563eb,color:#1e3a8a;
-    class Pointer,Store,Log,SQLite partial;
-    class HTTP,Admin,Auth todo;
+    class Pointer,Store,Log,SQLite,HTTP,Admin,Auth complete;
     class Agent,Operator external;
 ```
 
-**Implementation status:** 🟩 Complete · 🟨 Partial · ⬜ Not started. External participants are blue and are not implementation tasks. The amber boxes cover only the send slice; their other responsibilities are not implemented yet.
+**Implementation status:** 🟩 Implemented · 🟨 Partially implemented · ⬜ Not started. Green marks the MVP modules and entry points implemented on this feature branch; blue marks external participants. The color describes code present, not completion of every acceptance check or deployment verification.
 
 | Box | Responsibility |
 | --- | --- |
 | (a) Agent tool | Sends pointers and receives inbox or stream events through Ovue. |
-| (b) HTTP transport | Converts HTTP requests and SSE connections into calls to pointer operations, and returns their results. |
-| (c) Pointer operations | Applies pointer rules for sending, inbox retrieval, replay, acknowledgement, traffic-log access, and purge. |
-| (d) Seats module | Authenticates seats and resolves recipient identities. |
-| (e) Pointer persistence | Stores pointers, per-recipient deliveries, and event ordering durably. |
-| (f) Traffic log | Records pointer activity for the operator to inspect. |
-| (g) SQLite | Persists pointer, delivery, seat, and traffic-log data. |
-| (h) Operator | Uses Ovue administration capabilities. |
-| (i) Local admin CLI | Exposes operator actions and calls the relevant module operations. |
+| (b) HTTP transport | Handles authenticated send, directory, inbox, acknowledgement, and SSE requests, and returns module results. |
+| (c) Pointer operations | Validates sends and applies inbox, replay, acknowledgement, traffic-history, and purge behavior. |
+| (d) Seats module | Registers seats, manages handles and tokens, authenticates requests, and resolves recipient identities. |
+| (e) Pointer persistence | Stores pointers, independent deliveries, and persistent per-recipient event sequences. |
+| (f) Traffic log | Records pointer activity and delivery state for the operator to inspect. |
+| (g) SQLite | Durably stores pointer, delivery, sequence, seat, token-hash, and traffic-log data. |
+| (h) Operator | Uses the local CLI to administer seats, tokens, and pointer history. |
+| (i) Local admin CLI | Manages seats and tokens, sends as operator, reads and acknowledges the operator inbox, reads traffic, and purges history. |
 
 SSE is a delivery mode of the HTTP transport, not a separate system. The agent opens the HTTP connection, and the service sends pointer events back through it. Future transports, such as MCP, call the same modules and do not implement pointer rules themselves.
 
@@ -240,6 +238,7 @@ not_found          404
 replay_unavailable 409
 payload_too_large  413
 rate_limited       429, with retry_after_seconds
+method_not_allowed 405
 ```
 
 `POST /ack/{delivery-id}` returns the same `404 not_found` response when the delivery does not exist or belongs to another seat. This prevents delivery-ID probing. `/inbox/{seat-id}` and `/stream/{seat-id}` return `403 forbidden` when another seat's ID is requested. An unavailable replay returns HTTP `409` with this body:
@@ -343,7 +342,7 @@ Non-local administration is out of scope for version one.
 
 ## 10. Limits and deployment
 
-Configure per-seat and global limits for send rate, recipient deliveries, request-body bytes, open streams, unread deliveries, replay size, and total storage. Initial defaults are 60 pointer submissions per minute per seat, 4 KiB per request body, 8 open streams per seat, 128 open streams globally, 100 unread deliveries per recipient, and 1,000 replayed events per connection. Limits count pointers, recipient deliveries, bytes, and failed validation attempts separately.
+Configure per-seat and global limits for send rate, invalid send attempts, recipient deliveries, request-body bytes, open streams, unread deliveries, replay size, and total storage. Initial defaults are 60 send requests per minute per seat and source, 60 invalid send attempts per minute per seat and source, 4 KiB per request body, 8 open streams per seat, 128 open streams globally, 100 unread deliveries per recipient, and 1,000 replayed events per connection. Every send attempt, including an invalid attempt, also counts toward the send-request limit.
 
 Each registered seat receives a nonzero reservation of at least 1 open stream and 10 unread deliveries. Global stream and unread limits must be at least the number of registered seats multiplied by those reservations; otherwise seat creation or capacity reduction is rejected. A seat may use its reservation and only unused capacity beyond all reservations.
 
@@ -436,11 +435,12 @@ Receiver checks 50 and 56 require a compliant receiving client; they cannot be d
 - Recipient IDs in message events and the authenticated seat directory are intentionally visible workflow metadata.
 - The MVP has no per-seat storage quota. The 80% warning and seat revocation are the controls; a per-sender cap may be added later.
 - Traffic-log rows have a separate configurable retention age and are trimmed by the purge command.
+- Hosted TLS termination, proxy behavior, protected-backup setup and restore, and agent-tool wake-up have not been exercised; run those deployment checks before exposing a public instance.
 - Accepted MVP security posture: the service trusts its owning OS user; URL paths are public data; recipient lists and the seat directory are visible to authenticated seats; and free-text descriptions are handled as untrusted content through safe rendering and independent receiver checks.
 
 ## 13. Development and reporting
 
-Keep related domain code together and tests alongside the code they exercise. Split responsibilities into focused files and avoid God files. Include line-by-line explanatory comments. Implement and review one piece at a time.
+Keep related domain code together and tests alongside the code they exercise. Split responsibilities into focused files and avoid God files. Use docstrings to explain purpose and contract; add inline comments only where the docstring leaves an important gap. Implement and review one piece at a time.
 
 On delivery, report what works, what was tested, and what could not be tested. Distinguish documented requirements from implemented or verified behavior.
 

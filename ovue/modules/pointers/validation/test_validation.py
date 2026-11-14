@@ -12,7 +12,6 @@ from ovue.modules.pointers.validation.validation import (
 )
 
 
-# Start with valid pointer details so each test changes only what it checks.
 def make_payload() -> Payload:
     """Make valid pointer details for the validation tests."""
     return Payload(
@@ -24,7 +23,6 @@ def make_payload() -> Payload:
     )
 
 
-# Use the same allowed host and capacity limits in each validation test.
 def make_policy(*, local_deployment: bool = False) -> Policy:
     """Allow one web address host and set limits for storage and inbox size."""
     return Policy(
@@ -36,7 +34,6 @@ def make_policy(*, local_deployment: bool = False) -> Policy:
     )
 
 
-# Keep each seat once, in the order it first appears in the recipient list.
 def test_validation_deduplicates_recipients_preserving_order() -> None:
     """Keep only the first occurrence of each seat ID in the recipient list."""
     payload = replace(make_payload(), to=("seat_c", "seat_b", "seat_c"))
@@ -51,7 +48,84 @@ def test_validation_deduplicates_recipients_preserving_order() -> None:
     assert recipients == ("seat_c", "seat_b")
 
 
-# Check that each kind of invalid pointer detail reports the right problem.
+def test_validation_accepts_ten_distinct_recipients() -> None:
+    """Allow the full recipient count permitted by the pointer contract."""
+    recipients = tuple(f"seat_{index}" for index in range(10))
+
+    accepted = validate(
+        replace(make_payload(), to=recipients),
+        sender_id="sender",
+        known_seat_ids=set(recipients),
+        policy=make_policy(),
+    )
+
+    assert accepted == recipients
+
+
+def test_validation_accepts_twelve_character_title_and_reports_its_limit() -> None:
+    """Allow a title at twelve characters and attach the limit to a rejection."""
+    payload = replace(make_payload(), ref_title="x" * 12)
+    assert validate(
+        payload,
+        sender_id="seat_a",
+        known_seat_ids={"seat_a", "seat_b"},
+        policy=make_policy(),
+    ) == ("seat_b",)
+
+    with pytest.raises(IssueRejected) as error:
+        validate(
+            replace(payload, ref_title="x" * 13),
+            sender_id="seat_a",
+            known_seat_ids={"seat_a", "seat_b"},
+            policy=make_policy(),
+        )
+
+    issue = next(
+        issue for issue in error.value.issues if issue.path == ("ref", "title")
+    )
+    assert issue.code == "too_long"
+    assert issue.max_value == 12
+
+
+def test_validation_accepts_url_at_2048_characters() -> None:
+    """Allow an absolute reference URL that uses the full configured limit."""
+    prefix = "https://work.example.org/"
+    payload = replace(make_payload(), ref_url=prefix + "a" * (2048 - len(prefix)))
+
+    assert validate(
+        payload,
+        sender_id="seat_a",
+        known_seat_ids={"seat_a", "seat_b"},
+        policy=make_policy(),
+    ) == ("seat_b",)
+
+
+@pytest.mark.parametrize(
+    ("url", "expected_code"),
+    [
+        ("https://user:secret@work.example.org/items/42", "userinfo_not_allowed"),
+        ("https://127.0.0.1/items/42", "invalid_host"),
+        ("https://work.example.org./items/42", "invalid_host"),
+        ("https://xn--bcher-kva.example/items/42", "invalid_host"),
+        ("https://work.example.org:8443/items/42", "non_default_port"),
+    ],
+)
+def test_validation_rejects_unsafe_reference_url_shapes(
+    url: str,
+    expected_code: str,
+) -> None:
+    """Reject URL forms that can confuse host validation or safe navigation."""
+    with pytest.raises(IssueRejected) as error:
+        validate(
+            replace(make_payload(), ref_url=url),
+            sender_id="seat_a",
+            known_seat_ids={"seat_a", "seat_b"},
+            policy=make_policy(),
+        )
+
+    assert expected_code in {issue.code for issue in error.value.issues}
+
+
 @pytest.mark.parametrize(
     ("payload", "sender_id", "known_seat_ids", "expected_code"),
     [
@@ -81,10 +155,40 @@ def test_validation_deduplicates_recipients_preserving_order() -> None:
             "invalid_scheme",
         ),
         (
+            replace(make_payload(), ref_url="data:text/html,example"),
+            "seat_a",
+            {"seat_a", "seat_b"},
+            "invalid_scheme",
+        ),
+        (
+            replace(make_payload(), ref_url="file:///tmp/example"),
+            "seat_a",
+            {"seat_a", "seat_b"},
+            "invalid_scheme",
+        ),
+        (
             replace(make_payload(), ref_url="https://outside.example/item"),
             "seat_a",
             {"seat_a", "seat_b"},
             "host_not_allowed",
+        ),
+        (
+            replace(make_payload(), ref_url="https://work.example.org/item?"),
+            "seat_a",
+            {"seat_a", "seat_b"},
+            "query_or_fragment_not_allowed",
+        ),
+        (
+            replace(make_payload(), ref_url="https://work.example.org/item#"),
+            "seat_a",
+            {"seat_a", "seat_b"},
+            "query_or_fragment_not_allowed",
+        ),
+        (
+            replace(make_payload(), ref_url="https://work.example.org/a\nb"),
+            "seat_a",
+            {"seat_a", "seat_b"},
+            "invalid_url",
         ),
         (
             replace(make_payload(), ref_title="bad!"),
@@ -125,7 +229,6 @@ def test_validation_rejects_invalid_payloads(
     assert any(issue.code == expected_code for issue in error.value.issues)
 
 
-# Check that a description with exactly 120 characters is allowed.
 def test_validation_accepts_description_at_120_characters() -> None:
     """Allow a description that uses all 120 permitted characters."""
     recipients = validate(
@@ -138,7 +241,6 @@ def test_validation_accepts_description_at_120_characters() -> None:
     assert recipients == ("seat_b",)
 
 
-# Reject a description as soon as it exceeds the 120-character limit.
 def test_validation_rejects_description_at_121_characters() -> None:
     """Report a length problem when a description has 121 characters."""
     with pytest.raises(IssueRejected) as error:
@@ -155,7 +257,6 @@ def test_validation_rejects_description_at_121_characters() -> None:
     )
 
 
-# Allow a localhost web address only when the service is in local mode.
 def test_validation_allows_http_localhost_only_for_local_deployment() -> None:
     """Allow an unencrypted localhost address only in local mode."""
     payload = replace(make_payload(), ref_url="http://localhost/items/42")
@@ -165,6 +266,21 @@ def test_validation_allows_http_localhost_only_for_local_deployment() -> None:
         sender_id="seat_a",
         known_seat_ids={"seat_a", "seat_b"},
         policy=make_policy(local_deployment=True),
+    )
+
+    assert recipients == ("seat_b",)
+
+
+def test_validation_allows_https_localhost_with_an_empty_local_allowlist() -> None:
+    """Allow localhost references in local mode without a configured host entry."""
+    payload = replace(make_payload(), ref_url="https://localhost/items/42")
+    policy = replace(make_policy(local_deployment=True), allowed_hosts=frozenset())
+
+    recipients = validate(
+        payload,
+        sender_id="seat_a",
+        known_seat_ids={"seat_a", "seat_b"},
+        policy=policy,
     )
 
     assert recipients == ("seat_b",)
