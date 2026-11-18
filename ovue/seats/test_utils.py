@@ -2,7 +2,7 @@
 
 import pytest
 
-from ovue.modules.seats.handles.validation import normalize_handle
+from ovue.seats.utils import normalize_handle
 
 
 @pytest.mark.parametrize(

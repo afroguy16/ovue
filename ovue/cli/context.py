@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ovue.configuration import Settings, load_settings
+from ovue.seats.main import SeatStore
 from ovue.storage.main import PointerStorage, SQLite
 from ovue.storage.seats import SeatStorage
 
@@ -19,7 +20,7 @@ class Stores:
     """Hold the SQLite interfaces used by one local CLI command."""
 
     settings: Settings
-    seats: SeatStorage
+    seats: SeatStore
     pointers: PointerStorage
 
 

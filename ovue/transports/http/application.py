@@ -4,8 +4,8 @@ import threading
 from dataclasses import dataclass
 
 from ovue.configuration import Settings
+from ovue.seats.main import SeatStore
 from ovue.storage.main import PointerStorage
-from ovue.storage.seats import SeatStorage
 from ovue.transports.http.limits import RateLimiter, StreamRegistry
 
 
@@ -15,7 +15,7 @@ class HTTPApplication:
 
     settings: Settings
     pointers: PointerStorage
-    seats: SeatStorage
+    seats: SeatStore
     rate_limiter: RateLimiter
     streams: StreamRegistry
     stopping: threading.Event

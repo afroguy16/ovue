@@ -7,7 +7,8 @@ import json
 from typing import TextIO
 
 from ovue.cli.context import Stores
-from ovue.modules.seats.management.operation import create_seat, rename_seat
+from ovue.seats.main import create_seat, rename_seat
+from ovue.seats.main import list_seats as get_seats
 
 
 def create(args: argparse.Namespace, stores: Stores, output: TextIO) -> None:
@@ -46,7 +47,7 @@ def list_seats(stores: Stores, output: TextIO) -> None:
             "role": seat.role,
             "token_status": "active" if seat.token_active else "revoked",
         }
-        for seat in stores.seats.list_seats()
+        for seat in get_seats(stores.seats)
     ]
     print(json.dumps({"items": items}, ensure_ascii=True), file=output)
 

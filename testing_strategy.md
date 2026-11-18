@@ -26,6 +26,8 @@ Keep tests beside the code they cover, following the project structure:
 | `operations/utils.py` | `operations/test_utils.py` | Cursor encoding and other small operation helpers. |
 | `operations/validation.py` | `operations/test_validation.py` | Pointer fields, recipient rules, URL policy, allowed values, and numeric boundaries. |
 | `operations/main.py` | `operations/test_main.py` | Pointer operations across validation and storage, including all-or-nothing behavior. |
+| `seats/main.py` | `seats/test_main.py` | Seat creation, capacity reservations, token operations, recipient lookup, and directory behavior. |
+| `seats/utils.py` | `seats/test_utils.py` | Handle validation and normalization. |
 | `storage/main.py` | `storage/test_main.py` | Persisted pointer, delivery, and traffic rows, including data retained after reopening SQLite. |
 | `storage/seats.py` | `storage/test_seats.py` | Seat records, token hashes, revocation, and persistence across reopening SQLite. |
 | `storage/utils.py` | `storage/test_utils.py` | Shared SQLite page-limit behavior. |

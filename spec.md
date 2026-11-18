@@ -54,6 +54,12 @@ ovue/                         # standalone project and repository root
     │   ├── test_utils.py
     │   └── spec.md
     ├── seats/
+    │   ├── main.py
+    │   ├── entities.py
+    │   ├── utils.py
+    │   ├── test_main.py
+    │   ├── test_utils.py
+    │   └── spec.md
     ├── storage/
     │   ├── main.py
     │   ├── test_main.py
@@ -105,7 +111,7 @@ flowchart LR
     classDef partial fill:#fef3c7,stroke:#d97706,color:#78350f;
     classDef external fill:#dbeafe,stroke:#2563eb,color:#1e3a8a;
     class HTTP,Admin,Operations,Store,SQLite complete;
-    class Seats partial;
+    class Seats complete;
     class Agent,Operator external;
 ```
 

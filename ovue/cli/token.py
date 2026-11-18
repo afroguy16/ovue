@@ -4,7 +4,7 @@ import argparse
 from typing import TextIO
 
 from ovue.cli.context import Stores
-from ovue.modules.seats.management.operation import revoke_token, rotate_token
+from ovue.seats.main import revoke_token, rotate_token
 
 
 def revoke(args: argparse.Namespace, stores: Stores, output: TextIO) -> None:

@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from ovue.configuration import ConfigurationError, Settings
 from ovue.operations.main import warn_if_near_capacity
+from ovue.seats.main import list_seats
 from ovue.storage.main import SQLite
 from ovue.storage.seats import SeatStorage
 from ovue.transports.http.application import HTTPApplication
@@ -94,7 +95,7 @@ def create_server(settings: Settings) -> OvueHTTPServer:
         max_logical_database_bytes=settings.max_logical_database_bytes,
     )
     try:
-        registered_count = len(seats.list_seats())
+        registered_count = len(list_seats(seats))
         if settings.max_streams_global < registered_count:
             raise ConfigurationError(
                 "Global stream capacity is below registered seat reservations"

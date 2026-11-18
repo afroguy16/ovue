@@ -15,6 +15,7 @@ from ovue.operations.main import (
     warn_if_near_capacity,
 )
 from ovue.operations.validation import Payload, Policy
+from ovue.seats.main import known_seat_ids
 
 
 def send_as_operator(args: argparse.Namespace, stores: Stores, output: TextIO) -> None:
@@ -28,7 +29,7 @@ def send_as_operator(args: argparse.Namespace, stores: Stores, output: TextIO) -
             args.kind,
         ),
         sender=Sender("operator", "Founder", "operator"),
-        known_seat_ids=stores.seats.known_seat_ids(),
+        known_seat_ids=known_seat_ids(stores.seats),
         policy=Policy(
             allowed_hosts=stores.settings.allowed_hosts,
             max_pointer_records=stores.settings.max_pointer_records,

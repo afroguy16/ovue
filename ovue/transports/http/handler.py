@@ -10,8 +10,6 @@ from io import BufferedReader
 from typing import Protocol, cast
 from urllib.parse import parse_qs, urlsplit
 
-from ovue.modules.seats.directory.operation import seat_directory
-from ovue.modules.seats.entities import AuthenticatedSeat
 from ovue.operations.main import (
     Sender,
     acknowledge,
@@ -22,6 +20,13 @@ from ovue.operations.main import (
     warn_if_near_capacity,
 )
 from ovue.operations.validation import Issue, IssueRejected, Policy
+from ovue.seats.entities import AuthenticatedSeat
+from ovue.seats.main import (
+    authenticate,
+    known_seat_ids,
+    seat_directory,
+    token_is_active,
+)
 from ovue.transports.http.application import HTTPApplication
 from ovue.transports.http.deadline import DeadlineReader
 from ovue.transports.http.request import parse_pointer_payload
@@ -186,7 +191,7 @@ class OvueRequestHandler(BaseHTTPRequestHandler):
             result = send(
                 payload,
                 sender=Sender(seat.id, seat.display_name, seat.role),
-                known_seat_ids=app.seats.known_seat_ids(),
+                known_seat_ids=known_seat_ids(app.seats),
                 policy=Policy(
                     allowed_hosts=app.settings.allowed_hosts,
                     max_pointer_records=app.settings.max_pointer_records,
@@ -309,8 +314,8 @@ class OvueRequestHandler(BaseHTTPRequestHandler):
                 token = self._bearer_token()
                 if token is None:
                     return
-                while not app.stopping.is_set() and app.seats.is_token_active(
-                    seat.id, token
+                while not app.stopping.is_set() and token_is_active(
+                    app.seats, seat.id, token
                 ):
                     try:
                         events = events_after(
@@ -402,7 +407,7 @@ class OvueRequestHandler(BaseHTTPRequestHandler):
             self._error(HTTPStatus.UNAUTHORIZED, "unauthorized")
             return None
         try:
-            return app.seats.authenticate(token)
+            return authenticate(app.seats, token)
         except PermissionError:
             self._error(HTTPStatus.UNAUTHORIZED, "unauthorized")
             return None
