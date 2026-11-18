@@ -8,9 +8,9 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from ovue.configuration import ConfigurationError, Settings
-from ovue.modules.pointers.monitoring.operation import warn_if_near_capacity
 from ovue.modules.pointers.storage.sqlite import SQLite
 from ovue.modules.seats.storage.sqlite import SeatStorage
+from ovue.operations.main import warn_if_near_capacity
 from ovue.transports.http.application import HTTPApplication
 from ovue.transports.http.handler import OvueRequestHandler
 from ovue.transports.http.limits import RateLimiter, StreamRegistry

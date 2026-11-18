@@ -3,8 +3,7 @@
 from typing import TextIO
 
 from ovue.cli.context import Stores
-from ovue.modules.pointers.purge.operation import purge
-from ovue.modules.pointers.traffic.operation import read_traffic
+from ovue.operations.main import purge, read_traffic
 
 
 def traffic(stores: Stores, output: TextIO, *, limit: int) -> None:

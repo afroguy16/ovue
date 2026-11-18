@@ -2,7 +2,7 @@
 
 import pytest
 
-from ovue.modules.pointers.validation.validation import IssueRejected
+from ovue.operations.validation import IssueRejected
 from ovue.transports.http.request import parse_pointer_payload
 
 

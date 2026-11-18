@@ -33,7 +33,7 @@ The service must not:
 
 ## 3. Package and module boundaries
 
-Ovue groups business capabilities into modules. The `pointers` module owns pointer operations and persistence; the `seats` module owns seat identity and authentication. HTTP and CLI are entry points that call these modules. Tests live beside the code they exercise.
+Ovue separates entry points, operations, seat identity, and persistence by responsibility. HTTP and CLI call the same operations. Tests live beside the code they exercise. The tree and diagram below show the agreed package shape; the status colors show the refactor's current progress.
 
 ```text
 ovue/                         # standalone project and repository root
@@ -42,13 +42,21 @@ ovue/                         # standalone project and repository root
 ├── spec.md                   # implementation specification
 └── ovue/                     # importable Python package
     ├── __init__.py
+    ├── __main__.py
     ├── configuration.py
-    ├── modules/
-    │   ├── pointers/
-    │   └── seats/
+    ├── cli/
+    ├── operations/
+    │   ├── main.py
+    │   ├── test_main.py
+    │   ├── validation.py
+    │   ├── test_validation.py
+    │   ├── utils.py
+    │   ├── test_utils.py
+    │   └── spec.md
+    ├── seats/
+    ├── storage/
     ├── transports/
     │   └── http/
-    └── cli/
 ```
 
 ```mermaid
@@ -56,7 +64,7 @@ flowchart LR
     subgraph People[External participants]
         direction TB
         Agent["(a) Agent tool"]
-        Operator["(h) Operator"]
+        Operator["(g) Operator"]
     end
 
     subgraph Ovue["Ovue package"]
@@ -64,52 +72,50 @@ flowchart LR
         subgraph Entry["Entry points"]
             direction TB
             HTTP["(b) HTTP transport"]
-            Admin["(i) Local admin CLI"]
+            Admin["(h) Local admin CLI"]
         end
 
-        subgraph Modules["Modules"]
-            Pointer["(c) Pointer operations<br/>send, inbox, replay, ack, traffic, purge"]
-            Auth["(d) Seats module<br/>identity, handles, and tokens"]
-            Store["(e) Pointer persistence<br/>deliveries and event sequences"]
-            Log["(f) Traffic log<br/>pointer history and state"]
-            Pointer --> Store
-            Pointer --> Log
+        subgraph Responsibilities["Package responsibilities"]
+            Operations["(c) Operations<br/>send, inbox, replay, ack, traffic, purge"]
+            Seats["(d) Seats<br/>identity, handles, and tokens"]
+            Store["(e) Storage<br/>pointer and seat persistence"]
         end
 
-        SQLite[("(g) SQLite<br/>pointers, seats, and traffic")]
+        SQLite["(f) SQLite"]
+        Operations --> Store
+        Seats --> Store
         Store --> SQLite
-        Log --> SQLite
-        Auth --> SQLite
     end
 
     Agent <--> HTTP
     Operator <--> Admin
-    HTTP <--> Pointer
-    HTTP --> Auth
-    Admin --> Pointer
-    Admin --> Auth
+    HTTP <--> Operations
+    HTTP --> Seats
+    Admin --> Operations
+    Admin --> Seats
 
     classDef complete fill:#dcfce7,stroke:#16a34a,color:#14532d;
+    classDef partial fill:#fef3c7,stroke:#d97706,color:#78350f;
     classDef external fill:#dbeafe,stroke:#2563eb,color:#1e3a8a;
-    class Pointer,Store,Log,SQLite,HTTP,Admin,Auth complete;
+    class HTTP,Admin,Operations complete;
+    class Seats,Store,SQLite partial;
     class Agent,Operator external;
 ```
 
-**Implementation status:** 🟩 Implemented · 🟨 Partially implemented · ⬜ Not started. Green marks the MVP modules and entry points implemented on this feature branch; blue marks external participants. The color describes code present, not completion of every acceptance check or deployment verification.
+**Implementation status:** 🟩 Implemented · 🟨 Partially implemented · ⬜ Not started. Green marks responsibilities implemented at their agreed package boundary; yellow marks responsibilities still being moved into that boundary; blue marks external participants. The color does not certify every deployment scenario.
 
 | Box | Responsibility |
 | --- | --- |
 | (a) Agent tool | Sends pointers and receives inbox or stream events through Ovue. |
-| (b) HTTP transport | Handles authenticated send, directory, inbox, acknowledgement, and SSE requests, and returns module results. |
-| (c) Pointer operations | Validates sends and applies inbox, replay, acknowledgement, traffic-history, and purge behavior. |
-| (d) Seats module | Registers seats, manages handles and tokens, authenticates requests, and resolves recipient identities. |
-| (e) Pointer persistence | Stores pointers, independent deliveries, and persistent per-recipient event sequences. |
-| (f) Traffic log | Records pointer activity and delivery state for the operator to inspect. |
-| (g) SQLite | Durably stores pointer, delivery, sequence, seat, token-hash, and traffic-log data. |
-| (h) Operator | Uses the local CLI to administer seats, tokens, and pointer history. |
-| (i) Local admin CLI | Manages seats and tokens, sends as operator, reads and acknowledges the operator inbox, reads traffic, and purges history. |
+| (b) HTTP transport | Handles authenticated requests and streams, then returns operation results. |
+| (c) Operations | Validates sends and applies inbox, replay, acknowledgement, traffic-history, and purge behavior. |
+| (d) Seats | Registers seats, manages handles and tokens, authenticates requests, and resolves recipient identities. |
+| (e) Storage | Persists pointers, deliveries, event sequences, seats, tokens, and traffic rows. |
+| (f) SQLite | Provides durable local storage for operations and seats. |
+| (g) Operator | Uses the local CLI to administer seats, tokens, and pointer history. |
+| (h) Local admin CLI | Manages seats and tokens, sends as operator, reads and acknowledges the operator inbox, reads traffic, and purges history. |
 
-SSE is a delivery mode of the HTTP transport, not a separate system. The agent opens the HTTP connection, and the service sends pointer events back through it. Future transports, such as MCP, call the same modules and do not implement pointer rules themselves.
+SSE is a delivery mode of the HTTP transport, not a separate system. The agent opens the HTTP connection, and the service sends pointer events back through it. Future transports, such as MCP, call the same operations and do not implement pointer rules themselves.
 
 ## 4. Pointer contract
 

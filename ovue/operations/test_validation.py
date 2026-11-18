@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 
-from ovue.modules.pointers.validation.validation import (
+from ovue.operations.validation import (
     IssueRejected,
     Payload,
     Policy,

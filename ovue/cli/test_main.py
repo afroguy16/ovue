@@ -10,10 +10,10 @@ import pytest
 
 from ovue.cli.main import main
 from ovue.cli.parser import build_parser
-from ovue.modules.pointers.send.operation import Sender, send
 from ovue.modules.pointers.storage.sqlite import SQLite
-from ovue.modules.pointers.validation.validation import Payload, Policy
 from ovue.modules.seats.storage.sqlite import SeatStorage
+from ovue.operations.main import Sender, send
+from ovue.operations.validation import Payload, Policy
 
 
 class TerminalCapture(io.StringIO):

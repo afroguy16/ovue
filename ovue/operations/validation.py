@@ -7,7 +7,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
-from ovue.modules.pointers.utils.functions import (
+from ovue.operations.utils import (
     is_printable_ascii,
     split_url,
     unique_in_order,

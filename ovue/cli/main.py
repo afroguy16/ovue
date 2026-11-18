@@ -13,7 +13,7 @@ from ovue.cli import maintenance, pointer, seat, token
 from ovue.cli.context import open_stores
 from ovue.cli.parser import build_parser
 from ovue.configuration import ConfigurationError, load_settings
-from ovue.modules.pointers.validation.validation import IssueRejected
+from ovue.operations.validation import IssueRejected
 from ovue.transports.http.server import serve
 
 

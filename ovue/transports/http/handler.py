@@ -10,15 +10,19 @@ from io import BufferedReader
 from typing import Protocol, cast
 from urllib.parse import parse_qs, urlsplit
 
-from ovue.modules.pointers.acknowledgement.operation import acknowledge
-from ovue.modules.pointers.inbox.operation import get_inbox
-from ovue.modules.pointers.monitoring.operation import warn_if_near_capacity
-from ovue.modules.pointers.send.operation import Sender, send
 from ovue.modules.pointers.storage.sqlite import CapacityReached
-from ovue.modules.pointers.stream.operation import events_after, start_stream
-from ovue.modules.pointers.validation.validation import Issue, IssueRejected, Policy
 from ovue.modules.seats.directory.operation import seat_directory
 from ovue.modules.seats.entities import AuthenticatedSeat
+from ovue.operations.main import (
+    Sender,
+    acknowledge,
+    events_after,
+    get_inbox,
+    send,
+    start_stream,
+    warn_if_near_capacity,
+)
+from ovue.operations.validation import Issue, IssueRejected, Policy
 from ovue.transports.http.application import HTTPApplication
 from ovue.transports.http.deadline import DeadlineReader
 from ovue.transports.http.request import parse_pointer_payload

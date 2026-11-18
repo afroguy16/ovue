@@ -1,6 +1,6 @@
 """Translate untrusted JSON objects into typed pointer submissions."""
 
-from ovue.modules.pointers.validation.validation import Issue, IssueRejected, Payload
+from ovue.operations.validation import Issue, IssueRejected, Payload
 
 
 def parse_pointer_payload(value: object) -> Payload:

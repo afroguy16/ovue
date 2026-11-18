@@ -7,11 +7,14 @@ import json
 from typing import TextIO
 
 from ovue.cli.context import Stores
-from ovue.modules.pointers.acknowledgement.operation import acknowledge
-from ovue.modules.pointers.inbox.operation import get_inbox
-from ovue.modules.pointers.monitoring.operation import warn_if_near_capacity
-from ovue.modules.pointers.send.operation import Sender, send
-from ovue.modules.pointers.validation.validation import Payload, Policy
+from ovue.operations.main import (
+    Sender,
+    acknowledge,
+    get_inbox,
+    send,
+    warn_if_near_capacity,
+)
+from ovue.operations.validation import Payload, Policy
 
 
 def send_as_operator(args: argparse.Namespace, stores: Stores, output: TextIO) -> None:
