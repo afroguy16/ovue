@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import io
 import json
+from importlib import import_module
 from pathlib import Path
 
 import pytest
 
 from ovue.cli.main import main
 from ovue.cli.parser import build_parser
+from ovue.configuration import Settings
 from ovue.operations.main import Sender, send
 from ovue.operations.validation import Payload, Policy
 from ovue.storage.main import SQLite
@@ -52,6 +54,65 @@ def test_parser_requires_a_known_command() -> None:
     with pytest.raises(SystemExit) as error:
         build_parser().parse_args(["--help"])
     assert error.value.code == 0
+
+
+def test_serve_command_loads_configuration_before_starting_http(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pass validated operator settings to the HTTP server without opening stores."""
+    config = make_config(tmp_path)
+    started_with: list[Settings] = []
+
+    def capture_settings(settings: Settings) -> None:
+        started_with.append(settings)
+
+    cli_module = import_module("ovue.cli.main")
+    monkeypatch.setattr(cli_module, "serve", capture_settings)
+
+    main(["--config", str(config), "serve"])
+
+    assert len(started_with) == 1
+    assert started_with[0].data_dir == tmp_path / "data"
+    assert started_with[0].allowed_hosts == frozenset({"work.example.org"})
+
+
+def test_serve_does_not_start_when_required_configuration_is_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stop before server startup when required finite settings are absent."""
+    config = tmp_path / "incomplete.toml"
+    config.write_text(
+        """
+[reference]
+allowed_hosts = []
+[storage]
+max_logical_database_bytes = 10485760
+[retention]
+acknowledged_pointer_max_age_days = 30
+traffic_log_max_age_days = 90
+[limits]
+max_unread_global = 1000
+""",
+        encoding="utf-8",
+    )
+    started_with: list[Settings] = []
+
+    def capture_settings(settings: Settings) -> None:
+        """Record an unexpected server start so the test can reject it."""
+        started_with.append(settings)
+
+    cli_module = import_module("ovue.cli.main")
+    monkeypatch.setattr(cli_module, "serve", capture_settings)
+    errors = io.StringIO()
+
+    with pytest.raises(SystemExit) as result:
+        main(["--config", str(config), "serve"], errors=errors)
+
+    assert result.value.code == 2
+    assert "max_pointer_records" in errors.getvalue()
+    assert started_with == []
 
 
 def test_seat_creation_refuses_to_emit_a_token_to_non_terminal_output(

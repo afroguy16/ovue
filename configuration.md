@@ -5,6 +5,12 @@ Human Driver: Jonathan
 
 Ovue reads TOML configuration. Finite storage and retention values are required at startup; the values in [`ovue.example.toml`](ovue.example.toml) are proposals and must be confirmed for each deployment.
 
+## Package startup
+
+The installed `ovue` command and `python -m ovue` call the same CLI entry point. Both accept the same options and commands. Put the global `--config` option before the command, for example `ovue --config ~/.config/ovue/config.toml serve`. If omitted, Ovue reads `~/.config/ovue/config.toml`.
+
+Startup loads and validates the configuration before starting the HTTP server or opening stores for an administrative command. Invalid or missing required values stop the command with a safe configuration error.
+
 ## Settings
 
 | Table | Setting | Meaning |

@@ -45,6 +45,16 @@ ovue/                         # standalone project and repository root
     ├── __main__.py
     ├── configuration.py
     ├── cli/
+    │   ├── __init__.py
+    │   ├── main.py
+    │   ├── parser.py
+    │   ├── context.py
+    │   ├── pointer.py
+    │   ├── seat.py
+    │   ├── token.py
+    │   ├── maintenance.py
+    │   ├── test_main.py
+    │   └── spec.md
     ├── operations/
     │   ├── main.py
     │   ├── test_main.py
@@ -68,17 +78,19 @@ ovue/                         # standalone project and repository root
     │   ├── utils.py
     │   ├── test_utils.py
     │   └── spec.md
-    ├── transports/
-    │   └── http/
-    │       ├── main.py
-    │       ├── test_main.py
-    │       ├── server.py
-    │       ├── application.py
-    │       ├── request.py
-    │       ├── sse.py
-    │       ├── limits.py
-    │       ├── deadline.py
-    │       └── spec.md
+    ├── test_configuration.py
+    ├── test_startup.py
+    └── transports/
+        └── http/
+            ├── main.py
+            ├── test_main.py
+            ├── server.py
+            ├── application.py
+            ├── request.py
+            ├── sse.py
+            ├── limits.py
+            ├── deadline.py
+            └── spec.md
 ```
 
 ```mermaid
@@ -450,6 +462,7 @@ Any non-local deployment requires HTTPS and rejects startup if a cleartext liste
 65. Attempt to create or rename a seat to the reserved handle `founder`; confirm the operation is rejected.
 66. Open slow partial HTTP requests until the configured worker limit is reached; confirm excess requests receive `503 server_busy`, slow requests close at the total header/body deadline, and the workers become available again.
 67. Reach the logical SQLite limit, then perform acknowledgement, seat revocation and rotation, and purge through their separate connections; confirm each succeeds and every writer connection observes the same `max_page_count`.
+68. Confirm `ovue --help` and `python -m ovue --help` expose the same command tree, and missing required configuration prevents HTTP startup.
 
 Receiver checks 50 and 56 require a compliant receiving client; they cannot be demonstrated by the acknowledgement endpoint alone.
 

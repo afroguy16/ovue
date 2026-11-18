@@ -31,6 +31,9 @@ Keep tests beside the code they cover, following the project structure:
 | `storage/main.py` | `storage/test_main.py` | Persisted pointer, delivery, and traffic rows, including data retained after reopening SQLite. |
 | `storage/seats.py` | `storage/test_seats.py` | Seat records, token hashes, revocation, and persistence across reopening SQLite. |
 | `storage/utils.py` | `storage/test_utils.py` | Shared SQLite page-limit behavior. |
+| `configuration.py` | `test_configuration.py` | Required settings, path handling, finite limits, and local-versus-hosted startup rules. |
+| `__main__.py` and `pyproject.toml` command entry | `test_startup.py` | The installed command and `python -m ovue` expose the same CLI. |
+| `cli/main.py` | `cli/test_main.py` | Command dispatch, validated startup configuration, and safe operator-facing failures. |
 | `transports/http/main.py` | `transports/http/test_main.py` | Externally observable HTTP requests and SSE stream behavior. |
 
 When a feature adds a new boundary between Ovue and something outside it, test the behavior visible at that boundary. Component tests do not replace tests of the behavior that users or other systems rely on.
