@@ -8,8 +8,6 @@ from threading import Barrier
 
 import pytest
 
-from ovue.modules.pointers.storage.sqlite import SQLite
-from ovue.modules.seats.storage.sqlite import SeatStorage
 from ovue.operations.main import (
     Sender,
     acknowledge,
@@ -24,6 +22,8 @@ from ovue.operations.main import (
     warn_if_near_capacity,
 )
 from ovue.operations.validation import IssueRejected, Payload, Policy
+from ovue.storage.main import SQLite
+from ovue.storage.seats import SeatStorage
 
 
 def make_policy(

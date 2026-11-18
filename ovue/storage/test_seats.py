@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ovue.modules.seats.storage.sqlite import SeatStorage
+from ovue.storage.seats import SeatStorage
 
 
 def test_create_seat_returns_one_time_token_and_stores_only_its_hash(

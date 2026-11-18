@@ -9,14 +9,13 @@ from dataclasses import dataclass
 from typing import cast
 from weakref import WeakKeyDictionary
 
-from ovue.modules.pointers.storage.sqlite import (
-    CapacityReached,
-    DeliveredPointer,
-    PointerRecord,
-    SQLite,
-)
 from ovue.operations.utils import decode_cursor, encode_cursor
 from ovue.operations.validation import Issue, IssueRejected, Payload, Policy, validate
+from ovue.storage.main import (
+    CapacityReached,
+    PointerRecord,
+    PointerStorage,
+)
 
 
 @dataclass(frozen=True)
@@ -29,11 +28,20 @@ class Sender:
 
 
 @dataclass(frozen=True)
+class Delivery:
+    """Describe one recipient delivery returned by a pointer operation."""
+
+    delivery_id: str
+    recipient_id: str
+    state: str
+
+
+@dataclass(frozen=True)
 class SendResult:
     """Return the created pointer ID and its recipient deliveries."""
 
     pointer_id: str
-    deliveries: tuple[DeliveredPointer, ...]
+    deliveries: tuple[Delivery, ...]
 
 
 def send(
@@ -42,7 +50,7 @@ def send(
     sender: Sender,
     known_seat_ids: set[str],
     policy: Policy,
-    storage: SQLite,
+    storage: PointerStorage,
 ) -> SendResult:
     """Validate the payload, persist it atomically, and return its IDs."""
     recipients = validate(
@@ -81,7 +89,17 @@ def send(
                 ),
             )
         ) from None
-    return SendResult(pointer_id=pointer_id, deliveries=deliveries)
+    return SendResult(
+        pointer_id=pointer_id,
+        deliveries=tuple(
+            Delivery(
+                delivery_id=delivery.delivery_id,
+                recipient_id=delivery.recipient_id,
+                state=delivery.state,
+            )
+            for delivery in deliveries
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -93,7 +111,7 @@ class InboxPage:
 
 
 def get_inbox(
-    storage: SQLite,
+    storage: PointerStorage,
     seat_id: str,
     *,
     unread: bool | None = None,
@@ -118,13 +136,18 @@ def get_inbox(
     return InboxPage(items, next_cursor)
 
 
-def acknowledge(storage: SQLite, delivery_id: str, *, recipient_id: str) -> None:
+def acknowledge(
+    storage: PointerStorage,
+    delivery_id: str,
+    *,
+    recipient_id: str,
+) -> None:
     """Mark the recipient's delivery read, or hide a foreign ID as not found."""
     storage.acknowledge_delivery(delivery_id, recipient_id)
 
 
 def replay_after(
-    storage: SQLite,
+    storage: PointerStorage,
     seat_id: str,
     last_event_id: str,
     *,
@@ -140,7 +163,7 @@ def replay_after(
 
 
 def unread_backlog(
-    storage: SQLite,
+    storage: PointerStorage,
     seat_id: str,
 ) -> tuple[dict[str, object], ...]:
     """Return the bounded unread inbox before a new live stream begins."""
@@ -156,7 +179,7 @@ class StreamStart:
 
 
 def start_stream(
-    storage: SQLite,
+    storage: PointerStorage,
     seat_id: str,
     *,
     last_event_id: str | None,
@@ -179,7 +202,7 @@ def start_stream(
 
 
 def events_after(
-    storage: SQLite,
+    storage: PointerStorage,
     seat_id: str,
     sequence: int,
     *,
@@ -198,7 +221,7 @@ class PurgeResult:
 
 
 def purge(
-    storage: SQLite,
+    storage: PointerStorage,
     *,
     pointer_age_days: int,
     log_age_days: int,
@@ -215,7 +238,7 @@ def purge(
     return PurgeResult(pointers, traffic_rows)
 
 
-def read_traffic(storage: SQLite, *, limit: int = 100) -> tuple[str, ...]:
+def read_traffic(storage: PointerStorage, *, limit: int = 100) -> tuple[str, ...]:
     """Return recent traffic records as one safely escaped JSON object per line."""
     if not 1 <= limit <= 1000:
         raise ValueError("Traffic history limit must be between 1 and 1000")
@@ -225,13 +248,16 @@ def read_traffic(storage: SQLite, *, limit: int = 100) -> tuple[str, ...]:
     )
 
 
-_WARNING_STATES: WeakKeyDictionary[SQLite, dict[str, bool]] = WeakKeyDictionary()
+_WARNING_STATES: WeakKeyDictionary[
+    PointerStorage,
+    dict[str, bool],
+] = WeakKeyDictionary()
 
 _WARNING_LOCK = threading.Lock()
 
 
 def warn_if_near_capacity(
-    storage: SQLite,
+    storage: PointerStorage,
     *,
     max_pointer_records: int,
     max_logical_database_bytes: int,

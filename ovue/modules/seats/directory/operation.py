@@ -1,6 +1,6 @@
 """Build the authenticated seat directory response."""
 
-from ovue.modules.seats.storage.sqlite import SeatStorage
+from ovue.storage.seats import SeatStorage
 
 
 def seat_directory(storage: SeatStorage) -> tuple[dict[str, str], ...]:

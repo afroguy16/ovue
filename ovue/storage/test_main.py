@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from ovue.modules.pointers.storage.sqlite import PointerRecord, SQLite
+from ovue.storage.main import PointerRecord, SQLite
 
 
 def test_persist_send_stores_pointer_delivery_and_log_rows(tmp_path: Path) -> None:

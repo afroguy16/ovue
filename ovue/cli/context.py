@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ovue.configuration import Settings, load_settings
-from ovue.modules.pointers.storage.sqlite import SQLite
-from ovue.modules.seats.storage.sqlite import SeatStorage
+from ovue.storage.main import PointerStorage, SQLite
+from ovue.storage.seats import SeatStorage
 
 
 @dataclass
@@ -20,7 +20,7 @@ class Stores:
 
     settings: Settings
     seats: SeatStorage
-    pointers: SQLite
+    pointers: PointerStorage
 
 
 @contextmanager

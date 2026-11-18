@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from ovue.modules.seats.directory.operation import seat_directory
-from ovue.modules.seats.storage.sqlite import SeatStorage
+from ovue.storage.seats import SeatStorage
 
 
 def test_directory_includes_operator_and_never_exposes_token_data(

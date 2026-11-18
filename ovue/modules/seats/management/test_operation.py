@@ -7,7 +7,7 @@ import pytest
 
 from ovue.configuration import Settings
 from ovue.modules.seats.management.operation import create_seat
-from ovue.modules.seats.storage.sqlite import SeatStorage
+from ovue.storage.seats import SeatStorage
 
 
 def make_settings(tmp_path: Path) -> Settings:

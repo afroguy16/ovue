@@ -8,9 +8,10 @@ import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Protocol
 from uuid import uuid4
 
-from ovue.database import apply_physical_page_limit
+from ovue.storage.utils import apply_physical_page_limit
 
 
 @dataclass(frozen=True)
@@ -60,6 +61,61 @@ class CapacityReached(Exception):
         self.path = path
         self.max_value = max_value
         super().__init__(message)
+
+
+class PointerStorage(Protocol):
+    """Define the persistence operations used by the application boundary."""
+
+    def persist_send(
+        self,
+        pointer: PointerRecord,
+        *,
+        max_pointer_records: int,
+        max_logical_database_bytes: int,
+        max_unread_per_seat: int,
+        max_unread_global: int = 1000,
+    ) -> tuple[str, tuple[DeliveredPointer, ...]]: ...
+
+    def capacity_usage(self) -> StorageUsage: ...
+
+    def get_inbox(
+        self,
+        recipient_id: str,
+        *,
+        unread: bool | None,
+        after_sequence: int,
+        limit: int,
+    ) -> tuple[dict[str, object], ...]: ...
+
+    def acknowledge_delivery(self, delivery_id: str, recipient_id: str) -> None: ...
+
+    def latest_sequence(self, recipient_id: str) -> int: ...
+
+    def initial_stream_state(
+        self,
+        recipient_id: str,
+        unread_limit: int = 100,
+    ) -> tuple[tuple[dict[str, object], ...], int]: ...
+
+    def replay_after(
+        self,
+        recipient_id: str,
+        sequence: int,
+        *,
+        limit: int,
+    ) -> tuple[dict[str, object], ...]: ...
+
+    def read_traffic(self, *, limit: int = 100) -> tuple[dict[str, object], ...]: ...
+
+    def purge(
+        self,
+        *,
+        pointer_age_days: int,
+        log_age_days: int,
+        vacuum: bool = False,
+    ) -> tuple[int, int]: ...
+
+    def close(self) -> None: ...
 
 
 class SQLite:

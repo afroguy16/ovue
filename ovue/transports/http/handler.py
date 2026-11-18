@@ -10,7 +10,6 @@ from io import BufferedReader
 from typing import Protocol, cast
 from urllib.parse import parse_qs, urlsplit
 
-from ovue.modules.pointers.storage.sqlite import CapacityReached
 from ovue.modules.seats.directory.operation import seat_directory
 from ovue.modules.seats.entities import AuthenticatedSeat
 from ovue.operations.main import (
@@ -200,9 +199,6 @@ class OvueRequestHandler(BaseHTTPRequestHandler):
             )
         except IssueRejected as error:
             self._report_send_validation_error(app, seat, error.issues)
-            return
-        except CapacityReached as error:
-            self._validation_error((Issue(error.code, error.message, error.path),))
             return
         deliveries = [
             {

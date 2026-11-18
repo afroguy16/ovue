@@ -23,10 +23,12 @@ Keep tests beside the code they cover, following the project structure:
 
 | Implementation file | Its colocated test file | What the tests check |
 | --- | --- | --- |
-| `utils/functions.py` | `utils/test_functions.py` | Small helper functions, such as URL parsing and character checks. |
-| `validation/validation.py` | `validation/test_validation.py` | Pointer fields, recipient rules, URL policy, allowed values, and numeric boundaries. |
-| `storage/sqlite.py` | `storage/test_sqlite.py` | Saved records, transaction behavior, capacity limits, and data retained after reopening SQLite. |
-| `send/operation.py` | `send/test_operation.py` | The send operation working across validation and storage, including all-or-nothing behavior. |
+| `operations/utils.py` | `operations/test_utils.py` | Cursor encoding and other small operation helpers. |
+| `operations/validation.py` | `operations/test_validation.py` | Pointer fields, recipient rules, URL policy, allowed values, and numeric boundaries. |
+| `operations/main.py` | `operations/test_main.py` | Pointer operations across validation and storage, including all-or-nothing behavior. |
+| `storage/main.py` | `storage/test_main.py` | Persisted pointer, delivery, and traffic rows, including data retained after reopening SQLite. |
+| `storage/seats.py` | `storage/test_seats.py` | Seat records, token hashes, revocation, and persistence across reopening SQLite. |
+| `storage/utils.py` | `storage/test_utils.py` | Shared SQLite page-limit behavior. |
 
 When a feature adds a new boundary between Ovue and something outside it, test the behavior visible at that boundary. Component tests do not replace tests of the behavior that users or other systems rely on.
 
@@ -55,7 +57,7 @@ python -m pytest
 Run one test file while working on a component:
 
 ```sh
-python -m pytest ovue/modules/pointers/validation/test_validation.py
+python -m pytest ovue/operations/test_validation.py
 ```
 
 Before reporting a change, state which tests and other checks were run. Do not describe an acceptance criterion as verified unless an implemented test or other direct check covers it.

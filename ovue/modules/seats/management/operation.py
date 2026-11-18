@@ -2,7 +2,7 @@
 
 from ovue.configuration import Settings
 from ovue.modules.seats.entities import Seat
-from ovue.modules.seats.storage.sqlite import SeatStorage
+from ovue.storage.seats import SeatStorage
 
 
 def create_seat(

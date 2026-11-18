@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from ovue.configuration import Settings
-from ovue.modules.seats.storage.sqlite import SeatStorage
+from ovue.storage.seats import SeatStorage
 from ovue.transports.http.server import OvueHTTPServer, create_server
 
 

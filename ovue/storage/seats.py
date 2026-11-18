@@ -12,9 +12,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-from ovue.database import apply_physical_page_limit
 from ovue.modules.seats.entities import AuthenticatedSeat, Seat
 from ovue.modules.seats.handles.validation import normalize_handle
+from ovue.storage.utils import apply_physical_page_limit
 
 
 class SeatStorage:
