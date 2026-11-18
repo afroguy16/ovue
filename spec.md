@@ -70,6 +70,15 @@ ovue/                         # standalone project and repository root
     │   └── spec.md
     ├── transports/
     │   └── http/
+    │       ├── main.py
+    │       ├── test_main.py
+    │       ├── server.py
+    │       ├── application.py
+    │       ├── request.py
+    │       ├── sse.py
+    │       ├── limits.py
+    │       ├── deadline.py
+    │       └── spec.md
 ```
 
 ```mermaid

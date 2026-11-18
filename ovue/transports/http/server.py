@@ -13,8 +13,8 @@ from ovue.seats.main import list_seats
 from ovue.storage.main import SQLite
 from ovue.storage.seats import SeatStorage
 from ovue.transports.http.application import HTTPApplication
-from ovue.transports.http.handler import OvueRequestHandler
 from ovue.transports.http.limits import RateLimiter, StreamRegistry
+from ovue.transports.http.main import OvueRequestHandler
 
 _Request = socket.socket | tuple[bytes, socket.socket]
 

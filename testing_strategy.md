@@ -31,6 +31,7 @@ Keep tests beside the code they cover, following the project structure:
 | `storage/main.py` | `storage/test_main.py` | Persisted pointer, delivery, and traffic rows, including data retained after reopening SQLite. |
 | `storage/seats.py` | `storage/test_seats.py` | Seat records, token hashes, revocation, and persistence across reopening SQLite. |
 | `storage/utils.py` | `storage/test_utils.py` | Shared SQLite page-limit behavior. |
+| `transports/http/main.py` | `transports/http/test_main.py` | Externally observable HTTP requests and SSE stream behavior. |
 
 When a feature adds a new boundary between Ovue and something outside it, test the behavior visible at that boundary. Component tests do not replace tests of the behavior that users or other systems rely on.
 

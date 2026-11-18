@@ -13,6 +13,7 @@ import pytest
 
 from ovue.configuration import Settings
 from ovue.storage.seats import SeatStorage
+from ovue.transports.http import main as http_main
 from ovue.transports.http.server import OvueHTTPServer, create_server
 
 
@@ -470,6 +471,48 @@ def test_two_live_streams_each_receive_the_pointer_event(http_server: Any) -> No
     finally:
         for connection in stream_connections:
             connection.close()
+
+
+def test_idle_stream_sends_heartbeats_and_stays_open(
+    http_server: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep an idle stream connected while three heartbeat intervals pass."""
+    server, _, _, recipient_id, recipient_token = http_server
+    real_sleep = time.sleep
+
+    class AcceleratedClock:
+        """Advance stream time quickly while preserving real socket behavior."""
+
+        current_time = 0.0
+
+        def monotonic(self) -> float:
+            """Advance ten simulated seconds for each stream clock check."""
+            self.current_time += 10
+            return self.current_time
+
+        def sleep(self, seconds: float) -> None:
+            """Yield briefly so the stream thread can serve the client."""
+            real_sleep(0.005)
+
+    monkeypatch.setattr(http_main, "time", AcceleratedClock())
+    connection = http.client.HTTPConnection(
+        server.server_address[0], server.server_address[1], timeout=3
+    )
+    try:
+        connection.request(
+            "GET",
+            f"/stream/{recipient_id}",
+            headers={"Authorization": f"Bearer {recipient_token}"},
+        )
+        response = connection.getresponse()
+        assert response.status == 200
+
+        for _ in range(3):
+            assert response.readline() == b": keep-alive\n"
+            assert response.readline() == b"\n"
+    finally:
+        connection.close()
 
 
 def test_stream_replays_after_last_event_id_and_repeats_stable_delivery_id(
