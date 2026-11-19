@@ -151,7 +151,7 @@ flowchart LR
 | (e) Storage | Persists pointers, deliveries, event sequences, seats, tokens, and traffic rows. |
 | (f) SQLite | Provides durable local storage for operations and seats. |
 | (g) Operator | Uses the local CLI to administer seats, tokens, and pointer history. |
-| (h) Local admin CLI | Creates a local-only configuration, manages seats and tokens, sends as operator, reads and acknowledges the operator inbox, reads traffic, and purges history. |
+| (h) Local admin CLI | Creates a local-only configuration, creates and hands seats to workers, manages tokens, sends as operator, reads and acknowledges the operator inbox, reads all pointer traffic, and purges history. |
 
 SSE is a delivery mode of the HTTP transport, not a separate system. The agent opens the HTTP connection, and the service sends pointer events back through it. Future transports, such as MCP, call the same operations and do not implement pointer rules themselves.
 
@@ -390,6 +390,10 @@ Rotation also works for a seat whose previous token has been revoked: it issues 
 
 Token and handle administration are operator capabilities, not agent capabilities. The seat ID and handle `operator` are permanently reserved; seat creation, import, and rename reject attempts to claim either reserved value.
 
+Only the operator creates registered seats. Each seat is assigned to a human or agent worker. After creation, the operator hands that worker the seat ID and its bearer token through a secure channel outside Ovue. The worker uses that seat identity for its Ovue requests. Seat handoff is credential provisioning, not pointer traffic.
+
+The operator can inspect every pointer and every recipient delivery state through the local traffic view. Ovue does not hide pointer fields from the operator. Traffic records do not contain bearer tokens, and Ovue does not fetch the content at a reference URL.
+
 The local admin CLI is restricted to the same operating-system user that owns the service data directory and uses `umask 077`. Raw tokens are displayed only when stdout is an operator-controlled terminal. The local OS user is a trusted boundary; compromise of that user means full service compromise. The terminal, including scrollback and any recording or screen-capture tools, is part of the trust boundary during one-time token display.
 
 Non-local administration is out of scope for version one.
@@ -491,6 +495,8 @@ Any non-local deployment requires HTTPS and rejects startup if a cleartext liste
 75. On a loopback local-profile deployment, request `/` without a token; confirm it serves the connection-check page with no seat or pointer data, no-store caching, and a same-origin-only CSP. Submit a token and confirm the page clears the field, calls only `GET /me`, identifies the authenticated seat using text rendering, and does not persist the token.
 76. On any configuration without the local-profile marker, confirm `GET /` returns `404`. Run `ovue serve --open-browser` with a loopback local profile and confirm it opens the local connection-check page; reject this option otherwise.
 77. Confirm `GET /me` returns only the authenticated seat's ID, handle, display name, and role, with no token material or other seats' data. Submit a valid token on the local connection-check page and confirm it identifies that seat and shows its inbox endpoint; submit an invalid token and confirm it reports authentication failure without retaining the input.
+78. Confirm only the local operator can create seats. Seat creation shows the seat ID and token once to the operator; the assigned worker can use the handed-off credentials, and an agent seat cannot create or provision another seat.
+79. Confirm the operator traffic view includes every pointer and each recipient's delivery state, while excluding bearer tokens and content fetched from reference URLs.
 
 Receiver checks 50 and 56 require a compliant receiving client; they cannot be demonstrated by the acknowledgement endpoint alone.
 

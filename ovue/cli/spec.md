@@ -21,7 +21,7 @@ The CLI is Ovue's local administration and service-start entry point. It transla
 
 ## Commands
 
-The command tree supports creating a local configuration with `ovue init --local`; starting the HTTP service, optionally opening its local connection-check page with `ovue serve --open-browser`; creating, listing, and renaming seats; revoking or rotating tokens; sending as the operator; reading and acknowledging the operator inbox; reading traffic; and purging eligible history. `ovue --help` and each command's `--help` show the accepted arguments.
+The command tree supports creating a local configuration with `ovue init --local`; starting the HTTP service, optionally opening its local connection-check page with `ovue serve --open-browser`; creating seats for human or agent workers and handing them their seat IDs and tokens; listing and renaming seats; revoking or rotating tokens; sending as the operator; reading and acknowledging the operator inbox; reading all pointer traffic; and purging eligible history. `ovue --help` and each command's `--help` show the accepted arguments.
 
 `init --local` writes the default local configuration through the configuration boundary. It writes explicit finite development values, marks the file as local-only, and binds to loopback. Repeated `--allow-host <hostname>` options add exact reference hosts, for example `ovue init --local --allow-host app.notion.com --allow-host work.example.org`. Values follow the hostname rules in the pointer specification, are lowercased, and duplicate entries collapse. If omitted, the allowlist is empty. Invalid values prevent file creation. Initialization does not require TLS or enable provider hosts by default, and it refuses to replace an existing configuration. After it succeeds, `ovue serve` starts without a `--config` argument. Startup rejects the local-only profile if its listener is changed to a non-loopback address.
 
@@ -29,7 +29,7 @@ The command tree supports creating a local configuration with `ovue init --local
 
 The optional `--config` path is a global option and appears before the command, for example `ovue --config ~/.config/ovue/config.toml serve`. If omitted, the CLI uses `~/.config/ovue/config.toml`.
 
-Seat creation and token rotation display raw credentials only when output is an operator-controlled terminal. Listing seats never returns token material. All pointer actions go through the operations boundary, and all seat and token actions go through the seats boundary.
+Only the operator creates seats. Seat creation displays the new seat ID and raw token once, and only when output is an operator-controlled terminal. The operator hands both to the assigned human or agent worker through a secure channel outside Ovue. Listing seats never returns token material. The traffic view lets the operator inspect all pointers and recipient delivery states; it never includes bearer tokens. All pointer actions go through the operations boundary, and all seat and token actions go through the seats boundary.
 
 ## Command flow
 

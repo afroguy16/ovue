@@ -8,6 +8,8 @@ The seats package owns registered identities, handles, authentication, the authe
 ## Responsibilities
 
 - Create and list registered seats without exposing token material.
+- Restrict seat creation and token issuance to the local operator, who assigns each seat to a human or agent worker.
+- Support the operator handing the worker the seat ID and one-time token outside Ovue.
 - Normalize handles and reserve the operator identity.
 - Resolve bearer tokens to authenticated seat identities.
 - Rotate and revoke tokens while keeping seat IDs stable.
