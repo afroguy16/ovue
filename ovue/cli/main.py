@@ -67,7 +67,17 @@ def _dispatch(args: argparse.Namespace, output: TextIO) -> None:
         print("Next: ovue serve", file=output)
         return
     if args.command == "serve":
-        serve(load_settings(config_path))
+        settings = load_settings(config_path)
+        if args.open_browser and (
+            not settings.local_profile or not settings.local_deployment
+        ):
+            raise ConfigurationError(
+                "The browser connection check requires a loopback local profile"
+            )
+        if args.open_browser:
+            serve(settings, open_browser=True)
+        else:
+            serve(settings)
         return
     with open_stores(config_path) as stores:
         if args.command == "seat":

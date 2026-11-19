@@ -8,7 +8,8 @@ The HTTP transport converts Ovue's HTTP and Server-Sent Events protocols into ca
 ## Responsibilities
 
 - Expose the send, seat directory, inbox, acknowledgement, and event-stream endpoints defined in the root specification.
-- Resolve bearer tokens through the seats boundary and authorize access before calling operations.
+- On loopback local-profile deployments, serve a browser connection check at `/`; keep it unavailable to all other configurations, including loopback listeners behind hosted proxies.
+- Resolve bearer tokens through the seats boundary and authorize access before calling agent-facing operations; the local diagnostic page does not authenticate until its `/seats` request.
 - Return the specified JSON errors without echoing submitted values.
 - Stream unread backlog or replayed events, then poll for live events and send a comment heartbeat every 20 seconds.
 - Apply configured request, worker, stream, and rate limits.
@@ -23,6 +24,9 @@ The HTTP transport converts Ovue's HTTP and Server-Sent Events protocols into ca
 - `sse.py` formats events and heartbeat comments.
 - `limits.py` bounds request and stream resources.
 - `deadline.py` applies a total deadline while reading HTTP requests.
+- `local_page.py` renders the local connection-check page without embedding user data.
+- `test_local_page.py` checks the page's token handling and safe rendering contract.
+- `test_server.py` checks the optional browser launch against the local listener.
 - `test_main.py` checks externally observable HTTP and SSE behavior.
 
 ## Request flow

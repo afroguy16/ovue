@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+from dataclasses import replace
 from importlib import import_module
 from pathlib import Path
 
@@ -11,7 +12,7 @@ import pytest
 
 from ovue.cli.main import main
 from ovue.cli.parser import build_parser
-from ovue.configuration import Settings
+from ovue.configuration import Settings, load_settings
 from ovue.operations.main import Sender, send
 from ovue.operations.validation import Payload, Policy
 from ovue.storage.main import SQLite
@@ -75,6 +76,60 @@ def test_serve_command_loads_configuration_before_starting_http(
     assert len(started_with) == 1
     assert started_with[0].data_dir == tmp_path / "data"
     assert started_with[0].allowed_hosts == frozenset({"work.example.org"})
+
+
+def test_serve_can_open_the_browser_connection_check(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pass the optional browser launch request to the HTTP server boundary."""
+    config = make_config(tmp_path)
+    config.write_text(
+        config.read_text(encoding="utf-8") + "\n[local]\nprofile = true\n",
+        encoding="utf-8",
+    )
+    started_with: list[tuple[Settings, bool]] = []
+
+    def capture_settings(settings: Settings, *, open_browser: bool = False) -> None:
+        started_with.append((settings, open_browser))
+
+    cli_module = import_module("ovue.cli.main")
+    monkeypatch.setattr(cli_module, "serve", capture_settings)
+
+    main(["--config", str(config), "serve", "--open-browser"])
+
+    assert len(started_with) == 1
+    assert started_with[0][0].local_deployment
+    assert started_with[0][1]
+
+
+def test_serve_refuses_browser_connection_check_for_public_listener(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject the browser token-entry page before a public service starts."""
+    config = make_config(tmp_path)
+    settings = load_settings(config)
+    public_settings = replace(settings, host="0.0.0.0")
+    started_with: list[Settings] = []
+
+    def capture_settings(settings: Settings) -> None:
+        started_with.append(settings)
+
+    cli_module = import_module("ovue.cli.main")
+    monkeypatch.setattr(cli_module, "load_settings", lambda _path: public_settings)
+    monkeypatch.setattr(cli_module, "serve", capture_settings)
+    errors = io.StringIO()
+
+    with pytest.raises(SystemExit) as result:
+        main(
+            ["--config", str(config), "serve", "--open-browser"],
+            errors=errors,
+        )
+
+    assert result.value.code == 2
+    assert "requires a loopback local profile" in errors.getvalue()
+    assert started_with == []
 
 
 def test_serve_does_not_start_when_required_configuration_is_missing(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
@@ -29,6 +30,7 @@ from ovue.seats.main import (
 )
 from ovue.transports.http.application import HTTPApplication
 from ovue.transports.http.deadline import DeadlineReader
+from ovue.transports.http.local_page import render_local_connection_page
 from ovue.transports.http.request import parse_pointer_payload
 from ovue.transports.http.sse import encode_event, heartbeat
 
@@ -80,6 +82,12 @@ class OvueRequestHandler(BaseHTTPRequestHandler):
                 )
             )
             return
+        if split.path == "/":
+            if not app.settings.local_profile or not app.settings.local_deployment:
+                self._error(HTTPStatus.NOT_FOUND, "not_found")
+                return
+            self._local_connection_page()
+            return
         seat = self._authenticate(app)
         if seat is None:
             return
@@ -94,6 +102,33 @@ class OvueRequestHandler(BaseHTTPRequestHandler):
             self._stream(app, seat, parts[1])
             return
         self._error(HTTPStatus.NOT_FOUND, "not_found")
+
+    def _local_connection_page(self) -> None:
+        """Serve the local-only browser token check with restrictive headers."""
+        nonce = secrets.token_urlsafe(18)
+        body = render_local_connection_page(nonce)
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header(
+            "Content-Security-Policy",
+            "; ".join(
+                (
+                    "default-src 'none'",
+                    f"script-src 'nonce-{nonce}'",
+                    f"style-src 'nonce-{nonce}'",
+                    "connect-src 'self'",
+                    "form-action 'none'",
+                    "base-uri 'none'",
+                    "frame-ancestors 'none'",
+                )
+            ),
+        )
+        self.end_headers()
+        self.wfile.write(body)
 
     def do_POST(self) -> None:
         """Route pointer sends and recipient acknowledgements."""

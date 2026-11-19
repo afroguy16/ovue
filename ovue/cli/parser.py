@@ -33,7 +33,12 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="HOSTNAME",
         help="allow an exact external reference hostname; repeat as needed",
     )
-    commands.add_parser("serve", help="start the HTTP and SSE service")
+    serve = commands.add_parser("serve", help="start the HTTP and SSE service")
+    serve.add_argument(
+        "--open-browser",
+        action="store_true",
+        help="open the local token connection check in your browser",
+    )
 
     seats = commands.add_parser("seat", help="manage registered seats")
     seat_commands = seats.add_subparsers(dest="seat_command", required=True)

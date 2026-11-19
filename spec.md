@@ -85,11 +85,14 @@ ovue/                         # standalone project and repository root
             ├── main.py
             ├── test_main.py
             ├── server.py
+            ├── test_server.py
             ├── application.py
             ├── request.py
             ├── sse.py
             ├── limits.py
             ├── deadline.py
+            ├── local_page.py
+            ├── test_local_page.py
             └── spec.md
 ```
 
@@ -142,7 +145,7 @@ flowchart LR
 | Box | Responsibility |
 | --- | --- |
 | (a) Agent tool | Sends pointers and receives inbox or stream events through Ovue. |
-| (b) HTTP transport | Handles authenticated requests and streams, then returns operation results. |
+| (b) HTTP transport | Handles authenticated agent requests and streams, returns operation results, and serves the local-only connection check. |
 | (c) Operations | Validates sends and applies inbox, replay, acknowledgement, traffic-history, and purge behavior. |
 | (d) Seats | Registers seats, manages handles and tokens, authenticates requests, and resolves recipient identities. |
 | (e) Storage | Persists pointers, deliveries, event sequences, seats, tokens, and traffic rows. |
@@ -226,12 +229,15 @@ No additional seat metadata is included in the event. The sender identity contai
 ## 5. HTTP actions
 
 ```text
+GET  /                         local-only browser connection check
 POST /send
 GET  /seats
 GET  /inbox/{seat-id}?unread=1
 POST /ack/{delivery-id}
 GET  /stream/{seat-id}
 ```
+
+On a loopback local-profile deployment, `GET /` serves a local browser connection-check page without authentication. Other configurations return `404` for `/`, including hosted deployments whose listener is behind a loopback proxy. The page contains no seat or pointer data. It accepts a token in a password field, uses it only for a same-origin `GET /seats` request, clears the field after submission, and does not store the token in browser storage, a cookie, or the URL. The page displays only whether authorization succeeded and the number of returned seats.
 
 The sender authenticates with a bearer token in the `Authorization: Bearer <token>` header. Tokens are never accepted in query strings. Every registered seat is assigned a stable ID, handle, display name, role, and one bearer token. A seat may send only as itself and may read only its own inbox and stream. Handles and display names are human-facing metadata; IDs are used by the protocol.
 
@@ -240,6 +246,8 @@ Handles are unique within one Ovue deployment, compared case-insensitively, and 
 `GET /seats` is read-only and available to any authenticated seat. It returns every registered seat plus the reserved `operator` identity, with IDs, handles, display names, and roles. The operator has ID `operator`, handle `operator`, display name `Operator`, and role `operator`. The response never returns tokens or token hashes. Agents resolve handles through this directory, then address pointers using seat IDs; `to`, inbox, stream, and acknowledgement contracts continue to use IDs.
 
 Agent-facing HTTP exposes only send, seat directory, inbox, acknowledgement, and stream actions. Administration is performed through a local command-line tool.
+
+The local browser connection check at `GET /` is an operator diagnostic, not an agent-facing endpoint. It is available only when the service uses a valid loopback local profile.
 
 The local admin CLI may send as `operator`; no agent seat may impersonate it. The operator inbox is readable and acknowledgeable through the local CLI.
 
@@ -477,6 +485,8 @@ Any non-local deployment requires HTTPS and rejects startup if a cleartext liste
 72. Run `ovue init --local` when the default config already exists; confirm it reports the conflict and leaves the existing file unchanged.
 73. Supply the same host more than once, including mixed case; confirm the generated allowlist contains the lowercased host once.
 74. Change the generated local profile to a non-loopback listener; confirm the local-profile marker causes startup to reject it.
+75. On a loopback local-profile deployment, request `/` without a token; confirm it serves the connection-check page with no seat or pointer data, no-store caching, and a same-origin-only CSP. Submit a token and confirm the page clears the field, calls only `GET /seats`, displays no directory entries, and does not persist the token.
+76. On any configuration without the local-profile marker, confirm `GET /` returns `404`. Run `ovue serve --open-browser` with a loopback local profile and confirm it opens the local connection-check page; reject this option otherwise.
 
 Receiver checks 50 and 56 require a compliant receiving client; they cannot be demonstrated by the acknowledgement endpoint alone.
 

@@ -35,6 +35,8 @@ Keep tests beside the code they cover, following the project structure:
 | `__main__.py` and `pyproject.toml` command entry | `test_startup.py` | The installed command and `python -m ovue` expose the same CLI. |
 | `cli/main.py` | `cli/test_main.py` | Command dispatch, validated startup configuration, and safe operator-facing failures. |
 | `transports/http/main.py` | `transports/http/test_main.py` | Externally observable HTTP requests and SSE stream behavior. |
+| `transports/http/local_page.py` | `transports/http/test_local_page.py` | Local token-check page behavior, transient credentials, and safe output rendering. |
+| `transports/http/server.py` | `transports/http/test_server.py` | Server startup boundaries and optional local browser opening. |
 
 When a feature adds a new boundary between Ovue and something outside it, test the behavior visible at that boundary. Component tests do not replace tests of the behavior that users or other systems rely on.
 

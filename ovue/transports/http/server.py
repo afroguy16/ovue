@@ -5,6 +5,7 @@ from __future__ import annotations
 import socket
 import ssl
 import threading
+import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from ovue.configuration import ConfigurationError, Settings
@@ -147,13 +148,41 @@ def create_server(settings: Settings) -> OvueHTTPServer:
         raise
 
 
-def serve(settings: Settings) -> None:
+def serve(settings: Settings, *, open_browser: bool = False) -> None:
     """Run the service until interrupted, then close its sockets and stores."""
+    if open_browser and (not settings.local_profile or not settings.local_deployment):
+        raise ConfigurationError(
+            "The browser connection check requires a loopback local profile"
+        )
     server = create_server(settings)
     try:
+        if open_browser:
+            open_local_browser(
+                settings,
+                (str(server.server_address[0]), int(server.server_address[1])),
+            )
         server.serve_forever(poll_interval=0.2)
     finally:
         server.application.stopping.set()
         server.server_close()
         server.application.pointers.close()
         server.application.seats.close()
+
+
+def open_local_browser(settings: Settings, address: tuple[str, int]) -> str:
+    """Open the loopback connection-check page or print its URL as a fallback."""
+    if not settings.local_profile or not settings.local_deployment:
+        raise ConfigurationError(
+            "The browser connection check requires a loopback local profile"
+        )
+    host = address[0]
+    formatted_host = f"[{host}]" if ":" in host else host
+    scheme = "https" if settings.tls_certfile and settings.tls_keyfile else "http"
+    url = f"{scheme}://{formatted_host}:{address[1]}/"
+    try:
+        opened = webbrowser.open(url, new=2)
+    except webbrowser.Error:
+        opened = False
+    if not opened:
+        print(f"Open this local connection-check page: {url}")
+    return url

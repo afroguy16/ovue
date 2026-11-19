@@ -6,6 +6,7 @@ import socket
 import threading
 import time
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +45,7 @@ def make_settings(
         max_http_workers=max_http_workers,
         request_timeout_seconds=request_timeout_seconds,
         max_streams_global=max_streams_global,
+        local_profile=True,
     )
 
 
@@ -91,14 +93,14 @@ def request(
     method: str,
     path: str,
     *,
-    token: str,
+    token: str | None = None,
     body: object | bytes | None = None,
     headers: dict[str, str] | None = None,
 ) -> tuple[int, Any]:
-    """Send one authenticated request and decode its response body."""
+    """Send one HTTP request and decode its response body."""
     host, port = server.server_address
     connection = http.client.HTTPConnection(host, port, timeout=3)
-    request_headers = {"Authorization": f"Bearer {token}"}
+    request_headers = {} if token is None else {"Authorization": f"Bearer {token}"}
     if headers:
         request_headers.update(headers)
     if body is None:
@@ -172,6 +174,49 @@ def test_send_directory_inbox_ack_and_cross_seat_access(http_server: Any) -> Non
     )
     assert status == 200
     assert acknowledged == {"delivery_id": delivery_id, "state": "read"}
+
+
+def test_local_root_serves_connection_check_without_auth(http_server: Any) -> None:
+    """Serve a no-store, same-origin token form only on the loopback service."""
+    server, *_ = http_server
+    host, port = server.server_address
+    connection = http.client.HTTPConnection(host, port, timeout=3)
+    connection.request("GET", "/")
+    response = connection.getresponse()
+    page = response.read().decode("utf-8")
+
+    assert response.status == 200
+    assert response.getheader("Cache-Control") == "no-store"
+    assert response.getheader("Referrer-Policy") == "no-referrer"
+    assert response.getheader("X-Content-Type-Options") == "nosniff"
+    assert "connect-src 'self'" in response.getheader("Content-Security-Policy", "")
+    assert 'type="password"' in page
+    assert 'fetch("/seats"' in page
+    assert "localStorage" not in page
+    assert "sessionStorage" not in page
+    assert "textContent" in page
+    connection.close()
+
+
+def test_local_root_is_hidden_without_local_profile(http_server: Any) -> None:
+    """Keep the browser check behind both the marker and loopback binding."""
+    server, *_ = http_server
+    server.application.settings = replace(
+        server.application.settings, local_profile=False
+    )
+
+    status, body = request(server, "GET", "/")
+
+    assert status == 404
+    assert body == {"error": "not_found"}
+
+    server.application.settings = replace(
+        server.application.settings, host="0.0.0.0", local_profile=True
+    )
+    status, body = request(server, "GET", "/")
+
+    assert status == 404
+    assert body == {"error": "not_found"}
 
 
 def test_http_rejects_body_sender_without_echoing_submitted_values(

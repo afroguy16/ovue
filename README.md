@@ -18,11 +18,13 @@ Create a local configuration. Add one `--allow-host` option for each exact exter
 ovue init --local --allow-host app.notion.com
 ```
 
-Then start Ovue:
+Start Ovue and open its local connection-check page:
 
 ```sh
-ovue serve
+ovue serve --open-browser
 ```
+
+In the browser, paste a seat token into the password field to verify access. The page sends it only to Ovue's local `/seats` endpoint, shows the number of available seats, and does not save the token.
 
 In another terminal, register a seat. Its bearer token is displayed once, only when the command is run in a terminal. Save it securely for the seat owner.
 
