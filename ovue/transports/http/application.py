@@ -7,6 +7,7 @@ from ovue.configuration import Settings
 from ovue.seats.main import SeatStore
 from ovue.storage.main import PointerStorage
 from ovue.transports.http.limits import RateLimiter, StreamRegistry
+from ovue.transports.http.operator_access import OperatorAccess
 
 
 @dataclass
@@ -19,3 +20,4 @@ class HTTPApplication:
     rate_limiter: RateLimiter
     streams: StreamRegistry
     stopping: threading.Event
+    operator_access: OperatorAccess | None = None

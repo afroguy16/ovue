@@ -18,13 +18,13 @@ Create a local configuration. Add one `--allow-host` option for each exact exter
 ovue init --local --allow-host app.notion.com
 ```
 
-Start Ovue and open its local connection-check page:
+Start Ovue and open its local browser interface:
 
 ```sh
 ovue serve --open-browser
 ```
 
-In the browser, paste a seat token into the password field to verify access. The page identifies the authenticated seat and shows its inbox endpoint. It sends the token only to Ovue's local `/me` endpoint and does not save it.
+The browser opens a worker inbox and an operator traffic view. Workers enter their seat token to read and acknowledge their own pointers; acknowledge a pointer only after its work is complete or recorded as failed. The token is held only in page memory. To open the operator view, choose **Operator traffic** and enter the one-time code printed in the server terminal. That read-only view includes every retained pointer delivery and its recipient state, with older records available through **Load older traffic**. Seat creation, assignment, and token management remain CLI actions.
 
 In another terminal, register a seat. Its bearer token is displayed once, only when the command is run in a terminal. Save it securely for the seat owner.
 

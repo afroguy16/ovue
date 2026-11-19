@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import socket
 import ssl
+import sys
 import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -16,6 +17,7 @@ from ovue.storage.seats import SeatStorage
 from ovue.transports.http.application import HTTPApplication
 from ovue.transports.http.limits import RateLimiter, StreamRegistry
 from ovue.transports.http.main import OvueRequestHandler
+from ovue.transports.http.operator_access import OperatorAccess
 
 _Request = socket.socket | tuple[bytes, socket.socket]
 
@@ -88,7 +90,11 @@ class OvueHTTPServer(ThreadingHTTPServer):
         super().shutdown()
 
 
-def create_server(settings: Settings) -> OvueHTTPServer:
+def create_server(
+    settings: Settings,
+    *,
+    operator_access: OperatorAccess | None = None,
+) -> OvueHTTPServer:
     """Open protected stores and construct a local or TLS-protected server."""
     settings.data_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     seats = SeatStorage(
@@ -127,6 +133,7 @@ def create_server(settings: Settings) -> OvueHTTPServer:
             global_limit=settings.max_streams_global,
         ),
         stopping=threading.Event(),
+        operator_access=operator_access,
     )
     server: OvueHTTPServer | None = None
     try:
@@ -152,11 +159,22 @@ def serve(settings: Settings, *, open_browser: bool = False) -> None:
     """Run the service until interrupted, then close its sockets and stores."""
     if open_browser and (not settings.local_profile or not settings.local_deployment):
         raise ConfigurationError(
-            "The browser connection check requires a loopback local profile"
+            "The local browser interface requires a loopback local profile"
         )
-    server = create_server(settings)
+    if open_browser and not sys.stdout.isatty():
+        raise ConfigurationError(
+            "The operator browser code can be shown only in an "
+            "operator-controlled terminal"
+        )
+    operator_access: OperatorAccess | None = None
+    operator_code: str | None = None
+    if open_browser:
+        operator_access, operator_code = OperatorAccess.create()
+    server = create_server(settings, operator_access=operator_access)
     try:
         if open_browser:
+            assert operator_code is not None
+            print(f"Local operator code (valid for 5 minutes): {operator_code}")
             open_local_browser(
                 settings,
                 (str(server.server_address[0]), int(server.server_address[1])),
@@ -170,10 +188,10 @@ def serve(settings: Settings, *, open_browser: bool = False) -> None:
 
 
 def open_local_browser(settings: Settings, address: tuple[str, int]) -> str:
-    """Open the loopback connection-check page or print its URL as a fallback."""
+    """Open the local browser interface or print its URL as a fallback."""
     if not settings.local_profile or not settings.local_deployment:
         raise ConfigurationError(
-            "The browser connection check requires a loopback local profile"
+            "The local browser interface requires a loopback local profile"
         )
     host = address[0]
     formatted_host = f"[{host}]" if ":" in host else host
@@ -184,5 +202,5 @@ def open_local_browser(settings: Settings, address: tuple[str, int]) -> str:
     except webbrowser.Error:
         opened = False
     if not opened:
-        print(f"Open this local connection-check page: {url}")
+        print(f"Open this local Ovue page: {url}")
     return url

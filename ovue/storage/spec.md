@@ -10,6 +10,7 @@ Storage owns durable pointer persistence and the SQLite capacity rules shared by
 - Persist a pointer, each recipient delivery, and its traffic row in one transaction.
 - Enforce pointer-count, logical database-size, and unread-delivery limits atomically.
 - Read inbox pages and stream events in recipient sequence order.
+- Read traffic records in stable newest-first pages using the internal log sequence.
 - Acknowledge only the recipient's own delivery.
 - Retain eligible pointers and traffic history according to the configured purge ages.
 - Apply the physical SQLite page cap with recovery headroom.

@@ -72,7 +72,7 @@ def _dispatch(args: argparse.Namespace, output: TextIO) -> None:
             not settings.local_profile or not settings.local_deployment
         ):
             raise ConfigurationError(
-                "The browser connection check requires a loopback local profile"
+                "The local browser interface requires a loopback local profile"
             )
         if args.open_browser:
             serve(settings, open_browser=True)

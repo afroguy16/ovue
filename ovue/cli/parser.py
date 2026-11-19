@@ -37,7 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument(
         "--open-browser",
         action="store_true",
-        help="open the local token connection check in your browser",
+        help="open the local worker inbox and operator traffic views",
     )
 
     seats = commands.add_parser("seat", help="manage registered seats")

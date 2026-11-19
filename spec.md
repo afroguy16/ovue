@@ -145,7 +145,7 @@ flowchart LR
 | Box | Responsibility |
 | --- | --- |
 | (a) Agent tool | Sends pointers and receives inbox or stream events through Ovue. |
-| (b) HTTP transport | Handles authenticated agent requests and streams, returns operation results, and serves the local-only connection check. |
+| (b) HTTP transport | Handles authenticated agent requests and streams, returns operation results, and serves the local-only worker and operator browser views. |
 | (c) Operations | Validates sends and applies inbox, replay, acknowledgement, traffic-history, and purge behavior. |
 | (d) Seats | Registers seats, manages handles and tokens, authenticates requests, and resolves recipient identities. |
 | (e) Storage | Persists pointers, deliveries, event sequences, seats, tokens, and traffic rows. |
@@ -229,8 +229,10 @@ No additional seat metadata is included in the event. The sender identity contai
 ## 5. HTTP actions
 
 ```text
-GET  /                         local-only browser connection check
+GET  /                         local-only worker inbox and operator traffic UI
 GET  /me                      authenticated seat identity
+POST /operator/session        exchange one-time local operator code
+GET  /operator/traffic        operator-only paginated pointer traffic
 POST /send
 GET  /seats
 GET  /inbox/{seat-id}?unread=1
@@ -238,7 +240,11 @@ POST /ack/{delivery-id}
 GET  /stream/{seat-id}
 ```
 
-On a loopback local-profile deployment, `GET /` serves a local browser connection-check page without authentication. Other configurations return `404` for `/`, including hosted deployments whose listener is behind a loopback proxy. The page accepts a token in a password field, uses it only for a same-origin `GET /me` request, clears the field after submission, and does not store the token in browser storage, a cookie, or the URL. On success it identifies the authenticated seat and shows its inbox endpoint; it does not display the seat directory or pointer data.
+On a loopback local-profile deployment, `GET /` serves the local Ovue browser page without authentication. Other configurations return `404` for `/`, including hosted deployments whose listener is behind a loopback proxy. The page provides two views: a worker can enter a seat token to see and refresh that seat's inbox, and the local operator can enter a one-time operator code to view recent traffic for all pointers and recipient states. Worker tokens remain in page memory only. The operator session uses a short-lived `HttpOnly`, `SameSite=Strict` cookie so it survives page refresh without exposing the credential to JavaScript. Neither raw credential is included in a URL, and the operator session is not accessible to page JavaScript. The page clears credential fields after submission and renders all pointer content as untrusted text.
+
+The operator browser view is enabled only by `ovue serve --open-browser` with a loopback local profile. Before opening the page, the CLI creates a cryptographically random one-time code, displays it once in the operator-controlled terminal, and keeps only its hash in memory. The code expires after five minutes and can be exchanged once through `POST /operator/session` with a JSON `{ "code": "..." }` body for a random in-memory browser session. The service sets a same-origin `HttpOnly`, `SameSite=Strict` cookie for that session; it expires after eight hours or when the server stops. The code and session token are never written to disk, exposed to page JavaScript, included in a URL, or logged. `POST /operator/session` and `GET /operator/traffic` are unavailable unless this local operator-browser mode is enabled. Seat bearer tokens cannot authenticate to the operator endpoint.
+
+`GET /operator/traffic` returns pointer delivery records newest first, using the same safe fields as the local traffic log and excluding token material. It accepts `limit` (default 100, maximum 1000) and an opaque `cursor`, and returns `{items, next_cursor}`. The browser displays 100 records at a time, lets the operator load older records, and offers an explicit refresh. Cursor pagination must not duplicate or skip records while new traffic is added. The operator view is read-only; seat creation, assignment, token rotation, and revocation remain local CLI actions. The operator shares a created seat's ID and one-time token with its assigned worker through a secure channel outside Ovue.
 
 The sender authenticates with a bearer token in the `Authorization: Bearer <token>` header. Tokens are never accepted in query strings. Every registered seat is assigned a stable ID, handle, display name, role, and one bearer token. A seat may send only as itself and may read only its own inbox and stream. Handles and display names are human-facing metadata; IDs are used by the protocol.
 
@@ -250,7 +256,7 @@ Handles are unique within one Ovue deployment, compared case-insensitively, and 
 
 Agent-facing HTTP exposes send, current-seat identity, seat directory, inbox, acknowledgement, and stream actions. Administration is performed through a local command-line tool.
 
-The local browser connection check at `GET /` is an operator diagnostic, not an agent-facing endpoint. It is available only when the service uses a valid loopback local profile. It authenticates through `GET /me`, then displays the authenticated seat's display name, handle, role, ID, and own-inbox endpoint using safe text rendering.
+The local browser page at `GET /` is a local-only interface, not an agent-facing endpoint. In worker mode it authenticates through `GET /me`, then displays the authenticated seat's display name, handle, role, ID, and inbox using safe text rendering. It supports refreshing and cursor pagination, with a toggle to include acknowledged deliveries. In operator mode it exchanges the one-time local code for an in-memory session, then reads the global traffic view. The operator view is read-only.
 
 The local admin CLI may send as `operator`; no agent seat may impersonate it. The operator inbox is readable and acknowledgeable through the local CLI.
 
@@ -492,11 +498,18 @@ Any non-local deployment requires HTTPS and rejects startup if a cleartext liste
 72. Run `ovue init --local` when the default config already exists; confirm it reports the conflict and leaves the existing file unchanged.
 73. Supply the same host more than once, including mixed case; confirm the generated allowlist contains the lowercased host once.
 74. Change the generated local profile to a non-loopback listener; confirm the local-profile marker causes startup to reject it.
-75. On a loopback local-profile deployment, request `/` without a token; confirm it serves the connection-check page with no seat or pointer data, no-store caching, and a same-origin-only CSP. Submit a token and confirm the page clears the field, calls only `GET /me`, identifies the authenticated seat using text rendering, and does not persist the token.
-76. On any configuration without the local-profile marker, confirm `GET /` returns `404`. Run `ovue serve --open-browser` with a loopback local profile and confirm it opens the local connection-check page; reject this option otherwise.
-77. Confirm `GET /me` returns only the authenticated seat's ID, handle, display name, and role, with no token material or other seats' data. Submit a valid token on the local connection-check page and confirm it identifies that seat and shows its inbox endpoint; submit an invalid token and confirm it reports authentication failure without retaining the input.
+75. On a loopback local-profile deployment, request `/` without credentials; confirm it serves the worker and operator browser views without pointer data, with no-store caching and a same-origin-only CSP. Confirm user-provided pointer fields are rendered as text.
+76. On any configuration without the local-profile marker, confirm `GET /` returns `404`. Run `ovue serve --open-browser` with a loopback local profile and confirm it opens the local browser UI; reject this option otherwise.
+77. Confirm `GET /me` returns only the authenticated seat's ID, handle, display name, and role, with no token material or other seats' data. Submit a valid token in worker mode and confirm the page identifies that seat and loads only its inbox; submit an invalid token and confirm it reports authentication failure without retaining the input.
 78. Confirm only the local operator can create seats. Seat creation shows the seat ID and token once to the operator; the assigned worker can use the handed-off credentials, and an agent seat cannot create or provision another seat.
 79. Confirm the operator traffic view includes every pointer and each recipient's delivery state, while excluding bearer tokens and content fetched from reference URLs.
+80. Confirm `ovue serve --open-browser` generates an operator code only for an operator-controlled terminal and loopback local profile; the code is single-use, expires after five minutes, and is not persisted or logged.
+81. Confirm the operator browser session is held only in server memory, uses an eight-hour `HttpOnly`, `SameSite=Strict` cookie inaccessible to page JavaScript, expires on server shutdown, and cannot be authenticated with a seat token.
+82. Confirm `POST /operator/session` and `GET /operator/traffic` are unavailable when operator-browser mode is disabled or the server is not using a loopback local profile.
+83. Confirm the operator browser view returns pointer traffic and per-recipient states without token material, and renders submitted pointer fields as text.
+84. Confirm the worker browser view lists only the authenticated worker's inbox, supports refreshing and pagination, can include acknowledged deliveries, and acknowledges only through that worker's authenticated endpoint.
+85. Confirm seat creation, token rotation, and revocation remain CLI-only; a created seat's ID and one-time token are shown only to the operator-controlled terminal for handoff outside Ovue.
+86. Confirm operator traffic cursors let the browser view every retained traffic record without duplicates or skipped records, even when new records arrive between page requests.
 
 Receiver checks 50 and 56 require a compliant receiving client; they cannot be demonstrated by the acknowledgement endpoint alone.
 

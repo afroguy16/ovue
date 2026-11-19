@@ -105,7 +105,12 @@ class PointerStorage(Protocol):
         limit: int,
     ) -> tuple[dict[str, object], ...]: ...
 
-    def read_traffic(self, *, limit: int = 100) -> tuple[dict[str, object], ...]: ...
+    def read_traffic(
+        self,
+        *,
+        limit: int = 100,
+        before_log_id: int | None = None,
+    ) -> tuple[dict[str, object], ...]: ...
 
     def purge(
         self,
@@ -604,23 +609,34 @@ class SQLite:
                 raise RuntimeError("Replay exceeds the event limit")
             return events
 
-    def read_traffic(self, *, limit: int = 100) -> tuple[dict[str, object], ...]:
-        """Return recent traffic records in creation order for the operator."""
-        if not 1 <= limit <= 1000:
-            raise ValueError("Traffic limit must be between 1 and 1000")
+    def read_traffic(
+        self,
+        *,
+        limit: int = 100,
+        before_log_id: int | None = None,
+    ) -> tuple[dict[str, object], ...]:
+        """Return recent traffic records newest first after an optional log cursor."""
+        if not 1 <= limit <= 1001:
+            raise ValueError("Traffic page size must be between 1 and 1001")
+        cursor_clause = "" if before_log_id is None else "WHERE log_id < ?"
+        parameters: tuple[object, ...] = (
+            (limit,) if before_log_id is None else (before_log_id, limit)
+        )
         with self._lock:
             rows = self._connection.execute(
-                """
-                SELECT pointer_id, delivery_id, created_at, from_id, from_display_name,
+                f"""
+                SELECT log_id, pointer_id, delivery_id, created_at, from_id,
+                       from_display_name,
                        from_role, to_id, ref_url, ref_title, description, kind, state
-                FROM traffic_log ORDER BY log_id DESC LIMIT ?
+                FROM traffic_log {cursor_clause} ORDER BY log_id DESC LIMIT ?
                 """,
-                (limit,),
+                parameters,
             ).fetchall()
         records = []
-        for row in reversed(rows):
+        for row in rows:
             records.append(
                 {
+                    "_log_id": row["log_id"],
                     "pointer_id": row["pointer_id"],
                     "delivery_id": row["delivery_id"],
                     "created_at": row["created_at"],

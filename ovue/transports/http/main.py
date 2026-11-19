@@ -6,6 +6,7 @@ import json
 import secrets
 import time
 from http import HTTPStatus
+from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler
 from io import BufferedReader
 from typing import Protocol, cast
@@ -20,6 +21,7 @@ from ovue.operations.main import (
     start_stream,
     warn_if_near_capacity,
 )
+from ovue.operations.traffic import get_traffic_page
 from ovue.operations.validation import Issue, IssueRejected, Policy
 from ovue.seats.entities import AuthenticatedSeat
 from ovue.seats.main import (
@@ -30,7 +32,7 @@ from ovue.seats.main import (
 )
 from ovue.transports.http.application import HTTPApplication
 from ovue.transports.http.deadline import DeadlineReader
-from ovue.transports.http.local_page import render_local_connection_page
+from ovue.transports.http.local_page import render_local_page
 from ovue.transports.http.request import parse_pointer_payload
 from ovue.transports.http.sse import encode_event, heartbeat
 
@@ -61,7 +63,7 @@ class OvueRequestHandler(BaseHTTPRequestHandler):
             self.close_connection = True
 
     def do_GET(self) -> None:
-        """Route local diagnostics and authenticated seat or inbox requests."""
+        """Route local browser views and authenticated seat or inbox requests."""
         app = self._application()
         split = urlsplit(self.path)
         try:
@@ -86,7 +88,10 @@ class OvueRequestHandler(BaseHTTPRequestHandler):
             if not app.settings.local_profile or not app.settings.local_deployment:
                 self._error(HTTPStatus.NOT_FOUND, "not_found")
                 return
-            self._local_connection_page()
+            self._local_page()
+            return
+        if split.path == "/operator/traffic":
+            self._operator_traffic(app, split.query)
             return
         seat = self._authenticate(app)
         if seat is None:
@@ -114,10 +119,10 @@ class OvueRequestHandler(BaseHTTPRequestHandler):
             return
         self._error(HTTPStatus.NOT_FOUND, "not_found")
 
-    def _local_connection_page(self) -> None:
-        """Serve the local-only browser token check with restrictive headers."""
+    def _local_page(self) -> None:
+        """Serve the local-only browser interface with restrictive headers."""
         nonce = secrets.token_urlsafe(18)
-        body = render_local_connection_page(nonce)
+        body = render_local_page(nonce)
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -142,7 +147,7 @@ class OvueRequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self) -> None:
-        """Route pointer sends and recipient acknowledgements."""
+        """Route operator-session exchange, pointer sends, and acknowledgements."""
         app = self._application()
         split = urlsplit(self.path)
         try:
@@ -163,6 +168,9 @@ class OvueRequestHandler(BaseHTTPRequestHandler):
                 )
             )
             return
+        if split.path == "/operator/session":
+            self._operator_session(app)
+            return
         seat = self._authenticate(app)
         if seat is None:
             return
@@ -179,6 +187,123 @@ class OvueRequestHandler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.OK, {"delivery_id": parts[1], "state": "read"})
             return
         self._error(HTTPStatus.NOT_FOUND, "not_found")
+
+    def _operator_session(self, app: HTTPApplication) -> None:
+        """Exchange the one-time local code for an in-memory operator session."""
+        if not self._operator_browser_enabled(app):
+            self._error(HTTPStatus.NOT_FOUND, "not_found")
+            return
+        source = str(self.client_address[0])
+        retry = app.rate_limiter.check(f"operator-code:{source}", maximum=10)
+        if retry is not None:
+            self._error(HTTPStatus.TOO_MANY_REQUESTS, "rate_limited", retry)
+            return
+        raw_length = self.headers.get("Content-Length")
+        try:
+            length = int(raw_length) if raw_length is not None else -1
+        except ValueError:
+            length = -1
+        if length < 0:
+            self._validation_error(
+                (Issue("invalid_content_length", "Content-Length is required", ()),)
+            )
+            return
+        if length > min(4096, app.settings.max_body_bytes):
+            self._error(
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                "payload_too_large",
+            )
+            return
+        try:
+            body = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            body = None
+        if not isinstance(body, dict) or not isinstance(body.get("code"), str):
+            self._validation_error(
+                (
+                    Issue(
+                        "invalid_operator_code",
+                        "Operator code is required",
+                        ("code",),
+                    ),
+                )
+            )
+            return
+        access = app.operator_access
+        session = None if access is None else access.exchange(body["code"])
+        if session is None:
+            self._error(HTTPStatus.UNAUTHORIZED, "unauthorized")
+            return
+        cookie = (
+            f"ovue_operator_session={session}; Path=/; Max-Age=28800; "
+            "HttpOnly; SameSite=Strict"
+        )
+        if app.settings.tls_certfile is not None:
+            cookie += "; Secure"
+        self._json(
+            HTTPStatus.OK,
+            {"expires_in": 28800},
+            headers={"Set-Cookie": cookie},
+        )
+
+    def _operator_traffic(self, app: HTTPApplication, raw_query: str) -> None:
+        """Return bounded global pointer history to a local operator session."""
+        if not self._operator_browser_enabled(app):
+            self._error(HTTPStatus.NOT_FOUND, "not_found")
+            return
+        token = self._operator_cookie_token()
+        access = app.operator_access
+        if token is None or access is None or not access.authorizes(token):
+            self._error(HTTPStatus.UNAUTHORIZED, "unauthorized")
+            return
+        try:
+            query = parse_qs(raw_query, keep_blank_values=True, max_num_fields=2)
+            limit_text = _single_query_value(query, "limit")
+            cursor = _single_query_value(query, "cursor")
+            limit = 100 if limit_text is None else int(limit_text)
+        except ValueError:
+            self._validation_error(
+                (
+                    Issue(
+                        "invalid_query",
+                        "Traffic query is invalid",
+                        (),
+                    ),
+                )
+            )
+            return
+        if not 1 <= limit <= 1000:
+            self._validation_error(
+                (
+                    Issue(
+                        "invalid_limit",
+                        "Traffic limit must be between 1 and 1000",
+                        ("limit",),
+                        1000,
+                    ),
+                )
+            )
+            return
+        try:
+            page = get_traffic_page(app.pointers, limit=limit, cursor=cursor)
+        except ValueError:
+            self._validation_error(
+                (Issue("invalid_cursor", "Traffic cursor is invalid", ("cursor",)),)
+            )
+            return
+        self._json(
+            HTTPStatus.OK,
+            {"items": page.items, "next_cursor": page.next_cursor},
+        )
+
+    @staticmethod
+    def _operator_browser_enabled(app: HTTPApplication) -> bool:
+        """Require the browser grant and a valid loopback local deployment."""
+        return (
+            app.operator_access is not None
+            and app.settings.local_profile
+            and app.settings.local_deployment
+        )
 
     def log_message(self, format: str, *args: object) -> None:
         """Avoid placing request paths or pointer content in server logs."""
@@ -465,6 +590,16 @@ class OvueRequestHandler(BaseHTTPRequestHandler):
         if not separator or scheme.lower() != "bearer" or not token or " " in token:
             return None
         return token
+
+    def _operator_cookie_token(self) -> str | None:
+        """Return the local operator session cookie without accepting seat auth."""
+        cookie = SimpleCookie()
+        try:
+            cookie.load(self.headers.get("Cookie", ""))
+        except (CookieError, ValueError):
+            return None
+        session = cookie.get("ovue_operator_session")
+        return None if session is None else session.value
 
     def _application(self) -> HTTPApplication:
         """Return the application object attached to this server instance."""

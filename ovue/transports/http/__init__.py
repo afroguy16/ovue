@@ -1,1 +1,1 @@
-"""Serve the Ovue service contract over HTTP and Server-Sent Events."""
+"""Serve Ovue's HTTP, SSE, and local browser interfaces."""

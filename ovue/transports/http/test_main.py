@@ -15,6 +15,7 @@ import pytest
 from ovue.configuration import Settings
 from ovue.storage.seats import SeatStorage
 from ovue.transports.http import main as http_main
+from ovue.transports.http.operator_access import OperatorAccess
 from ovue.transports.http.server import OvueHTTPServer, create_server
 
 
@@ -88,6 +89,37 @@ def http_server(
         thread.join(timeout=2)
 
 
+@pytest.fixture
+def operator_http_server(
+    tmp_path: Path,
+) -> Iterator[tuple[OvueHTTPServer, str, str, str, str, str]]:
+    """Run a local server with a one-time operator browser code enabled."""
+    settings = make_settings(tmp_path)
+    sender_id, sender_token, recipient_id, recipient_token = create_seats(
+        settings.database_path,
+        max_logical_database_bytes=settings.max_logical_database_bytes,
+    )
+    operator_access, operator_code = OperatorAccess.create()
+    server = create_server(settings, operator_access=operator_access)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield (
+            server,
+            sender_id,
+            sender_token,
+            recipient_id,
+            recipient_token,
+            operator_code,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        server.application.pointers.close()
+        server.application.seats.close()
+        thread.join(timeout=2)
+
+
 def request(
     server: Any,
     method: str,
@@ -96,6 +128,7 @@ def request(
     token: str | None = None,
     body: object | bytes | None = None,
     headers: dict[str, str] | None = None,
+    response_headers: dict[str, str] | None = None,
 ) -> tuple[int, Any]:
     """Send one HTTP request and decode its response body."""
     host, port = server.server_address
@@ -112,6 +145,8 @@ def request(
         request_headers["Content-Type"] = "application/json"
     connection.request(method, path, body=encoded, headers=request_headers)
     response = connection.getresponse()
+    if response_headers is not None:
+        response_headers.update(dict(response.getheaders()))
     data = response.read()
     status = response.status
     connection.close()
@@ -121,6 +156,120 @@ def request(
         return status, json.loads(data)
     except json.JSONDecodeError:
         return status, data
+
+
+def test_operator_browser_code_unlocks_global_traffic_but_seat_token_does_not(
+    operator_http_server: tuple[OvueHTTPServer, str, str, str, str, str],
+) -> None:
+    """Restrict global traffic to the one-time local operator credential."""
+    server, _sender_id, sender_token, recipient_id, _recipient_token, code = (
+        operator_http_server
+    )
+    status, first_sent = request(
+        server,
+        "POST",
+        "/send",
+        token=sender_token,
+        body=pointer_body(recipient_id),
+    )
+    assert status == 201
+    status, second_sent = request(
+        server,
+        "POST",
+        "/send",
+        token=sender_token,
+        body=pointer_body(recipient_id),
+    )
+    assert status == 201
+
+    status, denied = request(
+        server,
+        "GET",
+        "/operator/traffic",
+        token=sender_token,
+    )
+
+    assert status == 401
+    assert denied == {"error": "unauthorized"}
+
+    session_headers: dict[str, str] = {}
+    status, session = request(
+        server,
+        "POST",
+        "/operator/session",
+        body={"code": code},
+        response_headers=session_headers,
+    )
+
+    assert status == 200
+    assert session == {"expires_in": 28800}
+    cookie = session_headers["Set-Cookie"].split(";", 1)[0]
+    assert "HttpOnly" in session_headers["Set-Cookie"]
+    assert "SameSite=Strict" in session_headers["Set-Cookie"]
+
+    status, rejected = request(
+        server,
+        "POST",
+        "/operator/session",
+        body={"code": code},
+    )
+    assert status == 401
+    assert rejected == {"error": "unauthorized"}
+
+    status, traffic = request(
+        server,
+        "GET",
+        "/operator/traffic?limit=1",
+        headers={"Cookie": cookie},
+    )
+
+    assert status == 200
+    assert len(traffic["items"]) == 1
+    assert traffic["items"][0]["pointer_id"] == second_sent["pointer_id"]
+    assert traffic["next_cursor"] is not None
+    assert sender_token not in json.dumps(traffic)
+
+    status, newest_sent = request(
+        server,
+        "POST",
+        "/send",
+        token=sender_token,
+        body=pointer_body(recipient_id),
+    )
+    assert status == 201
+
+    status, older_traffic = request(
+        server,
+        "GET",
+        f"/operator/traffic?limit=1&cursor={traffic['next_cursor']}",
+        headers={"Cookie": cookie},
+    )
+
+    assert status == 200
+    assert [item["pointer_id"] for item in older_traffic["items"]] == [
+        first_sent["pointer_id"]
+    ]
+    assert older_traffic["items"][0]["pointer_id"] != newest_sent["pointer_id"]
+    assert older_traffic["items"][0]["to"] == recipient_id
+    assert older_traffic["items"][0]["state"] == "unread"
+    assert older_traffic["next_cursor"] is None
+
+
+def test_operator_session_code_is_single_use_and_disabled_by_default(
+    http_server: tuple[OvueHTTPServer, str, str, str, str],
+) -> None:
+    """Keep the operator browser session unavailable on ordinary startup."""
+    server, _sender_id, _sender_token, _recipient_id, _recipient_token = http_server
+
+    status, body = request(
+        server,
+        "POST",
+        "/operator/session",
+        body={"code": "not-a-real-code"},
+    )
+
+    assert status == 404
+    assert body == {"error": "not_found"}
 
 
 def pointer_body(
@@ -185,8 +334,8 @@ def test_send_directory_inbox_ack_and_cross_seat_access(http_server: Any) -> Non
     assert acknowledged == {"delivery_id": delivery_id, "state": "read"}
 
 
-def test_local_root_serves_connection_check_without_auth(http_server: Any) -> None:
-    """Serve a no-store, same-origin token form only on the loopback service."""
+def test_local_root_serves_browser_views_without_auth(http_server: Any) -> None:
+    """Serve a no-store worker and operator interface only on loopback."""
     server, *_ = http_server
     host, port = server.server_address
     connection = http.client.HTTPConnection(host, port, timeout=3)
@@ -201,8 +350,9 @@ def test_local_root_serves_connection_check_without_auth(http_server: Any) -> No
     assert "connect-src 'self'" in response.getheader("Content-Security-Policy", "")
     assert 'type="password"' in page
     assert 'fetch("/me"' in page
-    assert 'id="seat-name"' in page
-    assert 'id="inbox-endpoint"' in page
+    assert 'id="worker-name"' in page
+    assert 'id="operator-code"' in page
+    assert 'id="worker-items"' in page
     assert "localStorage" not in page
     assert "sessionStorage" not in page
     assert "textContent" in page

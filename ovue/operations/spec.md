@@ -13,7 +13,7 @@ The root [`spec.md`](../../spec.md) defines the complete pointer contract, secur
 - Create pointers and independent recipient deliveries through the storage component.
 - Return paginated inbox results, unread stream backlogs, and replayed events.
 - Acknowledge a delivery only for its recipient.
-- Read traffic history, purge eligible records, and report capacity warnings.
+- Read cursor-paginated traffic history, purge eligible records, and report capacity warnings.
 - Keep transport request/response types, HTTP behavior, CLI parsing, seat storage, and database implementation outside this package.
 
 ## Operation flow
@@ -59,10 +59,11 @@ Send validates before persistence. Storage commits the pointer and every deliver
 
 ## Files
 
-- `main.py` coordinates send, inbox, acknowledgement, replay, stream preparation, traffic, purge, and capacity-warning operations.
+- `main.py` coordinates send, inbox, acknowledgement, replay, stream preparation, traffic output, purge, and capacity-warning operations.
+- `traffic.py` returns stable pages of operator traffic without exposing storage cursor fields.
 - `validation.py` defines pointer input, policy, issue types, and contract validation.
 - `utils.py` contains deterministic transformations used by validation and pagination.
-- `test_main.py`, `test_validation.py`, and `test_utils.py` test the behavior owned by their corresponding files.
+- `test_main.py`, `test_validation.py`, `test_utils.py`, and `test_traffic.py` test the behavior owned by their corresponding files.
 
 ## Boundaries
 

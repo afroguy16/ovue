@@ -243,7 +243,11 @@ def read_traffic(storage: PointerStorage, *, limit: int = 100) -> tuple[str, ...
     if not 1 <= limit <= 1000:
         raise ValueError("Traffic history limit must be between 1 and 1000")
     return tuple(
-        json.dumps(record, ensure_ascii=True, separators=(",", ":"))
+        json.dumps(
+            {key: value for key, value in record.items() if key != "_log_id"},
+            ensure_ascii=True,
+            separators=(",", ":"),
+        )
         for record in storage.read_traffic(limit=limit)
     )
 
