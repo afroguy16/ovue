@@ -393,9 +393,9 @@ The global pointer-row and SQLite file-size limits must be finite and configurab
 
 ### Local first-run setup
 
-`ovue init --local` creates a local-only configuration at `~/.config/ovue/config.toml`, with explicit finite development values and the default data directory written into the file. The generated listener binds only to `127.0.0.1`, requires no TLS files, and starts with an empty reference-host allowlist. It must contain no replacement markers or provider-host defaults. The generated file carries a marker identifying it as a local profile; startup rejects that profile if configured to bind to a non-loopback address. Hosted deployments still require their own finite limits and TLS configuration.
+`ovue init --local` creates a local-only configuration at `~/.config/ovue/config.toml`, with explicit finite development values and the default data directory written into the file. The generated listener binds only to `127.0.0.1` and requires no TLS files. The command accepts repeated `--allow-host <hostname>` options to populate the exact reference-host allowlist, for example `ovue init --local --allow-host app.notion.com --allow-host work.example.org`. Each value must pass the hostname rules in section 4; accepted hostnames are lowercased and duplicate entries collapse to one entry. If the option is omitted, the allowlist is empty. The command must not enable provider hosts by default. Invalid hostnames are rejected before creating the configuration file. The generated file carries a marker identifying it as a local profile; startup rejects that profile if configured to bind to a non-loopback address. Hosted deployments still require their own finite limits and TLS configuration.
 
-Initialization must not overwrite an existing configuration. On success, it prints the next command, `ovue serve`; the developer can create a seat with the existing local admin command. This path must allow a developer to start Ovue without copying an example file, editing deployment placeholders, or supplying `--config`. External reference hosts can be added later as exact allowlist entries.
+Initialization must not overwrite an existing configuration. On success, it prints the next command, `ovue serve`; the developer can create a seat with the existing local admin command. This path must allow a developer to start Ovue without copying an example file, editing deployment placeholders, or supplying `--config`.
 
 When a recipient already has 100 unread deliveries, a pointer addressed to that recipient is rejected with HTTP `400` and an issue such as `{ "path": ["to", 0], "code": "recipient_inbox_full", "message": "The recipient's inbox is full" }`. This is a temporary condition that clears when the recipient acknowledges a pointer and an unread slot becomes available. It is not a rate-limit response. The unread-capacity check runs inside the same `BEGIN IMMEDIATE` transaction as storage checks and pointer creation. A multi-recipient pointer is all-or-nothing: if any recipient inbox is full, no delivery is created. Purge eligibility and traffic-log retention are defined in section 8.
 
@@ -471,9 +471,12 @@ Any non-local deployment requires HTTPS and rejects startup if a cleartext liste
 66. Open slow partial HTTP requests until the configured worker limit is reached; confirm excess requests receive `503 server_busy`, slow requests close at the total header/body deadline, and the workers become available again.
 67. Reach the logical SQLite limit, then perform acknowledgement, seat revocation and rotation, and purge through their separate connections; confirm each succeeds and every writer connection observes the same `max_page_count`.
 68. Confirm `ovue --help` and `python -m ovue --help` expose the same command tree, and missing required configuration prevents HTTP startup.
-69. Run `ovue init --local` without an existing config; confirm it creates a finite loopback-only config with no TLS requirement, replacement markers, or provider-host defaults, then confirm `ovue serve` uses it without `--config`.
-70. Run `ovue init --local` when the default config already exists; confirm it reports the conflict and leaves the existing file unchanged.
-71. Change the generated local profile to a non-loopback listener; confirm the local-profile marker causes startup to reject it.
+69. Run `ovue init --local --allow-host app.notion.com --allow-host work.example.org`; confirm it creates a finite loopback-only config with both exact hosts, no TLS requirement or replacement markers, then confirm `ovue serve` uses it without `--config`.
+70. Run `ovue init --local` without `--allow-host`; confirm the generated allowlist is empty and no provider host is enabled by default.
+71. Supply an invalid `--allow-host` value; confirm initialization fails and does not create the config file.
+72. Run `ovue init --local` when the default config already exists; confirm it reports the conflict and leaves the existing file unchanged.
+73. Supply the same host more than once, including mixed case; confirm the generated allowlist contains the lowercased host once.
+74. Change the generated local profile to a non-loopback listener; confirm the local-profile marker causes startup to reject it.
 
 Receiver checks 50 and 56 require a compliant receiving client; they cannot be demonstrated by the acknowledgement endpoint alone.
 
