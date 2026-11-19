@@ -24,7 +24,7 @@ Start Ovue and open its local connection-check page:
 ovue serve --open-browser
 ```
 
-In the browser, paste a seat token into the password field to verify access. The page sends it only to Ovue's local `/seats` endpoint, shows the number of available seats, and does not save the token.
+In the browser, paste a seat token into the password field to verify access. The page identifies the authenticated seat and shows its inbox endpoint. It sends the token only to Ovue's local `/me` endpoint and does not save it.
 
 In another terminal, register a seat. Its bearer token is displayed once, only when the command is run in a terminal. Save it securely for the seat owner.
 
@@ -62,6 +62,9 @@ SEAT_ID='<recipient-seat-id>'
 
 # Find IDs and handles for registered seats and the operator.
 ovue_curl "$BASE_URL/seats"
+
+# Identify the seat associated with the token entered by the helper.
+ovue_curl "$BASE_URL/me"
 
 # Send a pointer to a recipient ID.
 ovue_curl -X POST -H 'Content-Type: application/json' \

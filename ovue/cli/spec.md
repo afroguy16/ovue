@@ -25,7 +25,7 @@ The command tree supports creating a local configuration with `ovue init --local
 
 `init --local` writes the default local configuration through the configuration boundary. It writes explicit finite development values, marks the file as local-only, and binds to loopback. Repeated `--allow-host <hostname>` options add exact reference hosts, for example `ovue init --local --allow-host app.notion.com --allow-host work.example.org`. Values follow the hostname rules in the pointer specification, are lowercased, and duplicate entries collapse. If omitted, the allowlist is empty. Invalid values prevent file creation. Initialization does not require TLS or enable provider hosts by default, and it refuses to replace an existing configuration. After it succeeds, `ovue serve` starts without a `--config` argument. Startup rejects the local-only profile if its listener is changed to a non-loopback address.
 
-`ovue serve --open-browser` opens the local connection-check page after the server binds. It is accepted only when the configuration carries the local-profile marker and uses a loopback listener. The page prompts for a seat token and verifies it against `GET /seats` without saving it.
+`ovue serve --open-browser` opens the local connection-check page after the server binds. It is accepted only when the configuration carries the local-profile marker and uses a loopback listener. The page prompts for a seat token, identifies the authenticated seat through `GET /me`, and shows that seat's inbox endpoint without saving the token.
 
 The optional `--config` path is a global option and appears before the command, for example `ovue --config ~/.config/ovue/config.toml serve`. If omitted, the CLI uses `~/.config/ovue/config.toml`.
 

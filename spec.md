@@ -230,6 +230,7 @@ No additional seat metadata is included in the event. The sender identity contai
 
 ```text
 GET  /                         local-only browser connection check
+GET  /me                      authenticated seat identity
 POST /send
 GET  /seats
 GET  /inbox/{seat-id}?unread=1
@@ -237,17 +238,19 @@ POST /ack/{delivery-id}
 GET  /stream/{seat-id}
 ```
 
-On a loopback local-profile deployment, `GET /` serves a local browser connection-check page without authentication. Other configurations return `404` for `/`, including hosted deployments whose listener is behind a loopback proxy. The page contains no seat or pointer data. It accepts a token in a password field, uses it only for a same-origin `GET /seats` request, clears the field after submission, and does not store the token in browser storage, a cookie, or the URL. The page displays only whether authorization succeeded and the number of returned seats.
+On a loopback local-profile deployment, `GET /` serves a local browser connection-check page without authentication. Other configurations return `404` for `/`, including hosted deployments whose listener is behind a loopback proxy. The page accepts a token in a password field, uses it only for a same-origin `GET /me` request, clears the field after submission, and does not store the token in browser storage, a cookie, or the URL. On success it identifies the authenticated seat and shows its inbox endpoint; it does not display the seat directory or pointer data.
 
 The sender authenticates with a bearer token in the `Authorization: Bearer <token>` header. Tokens are never accepted in query strings. Every registered seat is assigned a stable ID, handle, display name, role, and one bearer token. A seat may send only as itself and may read only its own inbox and stream. Handles and display names are human-facing metadata; IDs are used by the protocol.
+
+`GET /me` is available to any authenticated seat. It returns only the caller's identity as `{ "id": "seat-id", "handle": "handle", "display_name": "Display name", "role": "role" }`. It never returns token material or other seats' data.
 
 Handles are unique within one Ovue deployment, compared case-insensitively, and normalized to lowercase. A handle contains 2–32 ASCII letters, digits, underscores, or hyphens; the first character must be a letter or digit. Handles are shown with an `@` prefix in user interfaces and stored without it. The local admin CLI can rename a handle. Renaming does not change the seat ID, token, or existing pointer deliveries. Handles are not credentials.
 
 `GET /seats` is read-only and available to any authenticated seat. It returns every registered seat plus the reserved `operator` identity, with IDs, handles, display names, and roles. The operator has ID `operator`, handle `operator`, display name `Operator`, and role `operator`. The response never returns tokens or token hashes. Agents resolve handles through this directory, then address pointers using seat IDs; `to`, inbox, stream, and acknowledgement contracts continue to use IDs.
 
-Agent-facing HTTP exposes only send, seat directory, inbox, acknowledgement, and stream actions. Administration is performed through a local command-line tool.
+Agent-facing HTTP exposes send, current-seat identity, seat directory, inbox, acknowledgement, and stream actions. Administration is performed through a local command-line tool.
 
-The local browser connection check at `GET /` is an operator diagnostic, not an agent-facing endpoint. It is available only when the service uses a valid loopback local profile.
+The local browser connection check at `GET /` is an operator diagnostic, not an agent-facing endpoint. It is available only when the service uses a valid loopback local profile. It authenticates through `GET /me`, then displays the authenticated seat's display name, handle, role, ID, and own-inbox endpoint using safe text rendering.
 
 The local admin CLI may send as `operator`; no agent seat may impersonate it. The operator inbox is readable and acknowledgeable through the local CLI.
 
@@ -485,8 +488,9 @@ Any non-local deployment requires HTTPS and rejects startup if a cleartext liste
 72. Run `ovue init --local` when the default config already exists; confirm it reports the conflict and leaves the existing file unchanged.
 73. Supply the same host more than once, including mixed case; confirm the generated allowlist contains the lowercased host once.
 74. Change the generated local profile to a non-loopback listener; confirm the local-profile marker causes startup to reject it.
-75. On a loopback local-profile deployment, request `/` without a token; confirm it serves the connection-check page with no seat or pointer data, no-store caching, and a same-origin-only CSP. Submit a token and confirm the page clears the field, calls only `GET /seats`, displays no directory entries, and does not persist the token.
+75. On a loopback local-profile deployment, request `/` without a token; confirm it serves the connection-check page with no seat or pointer data, no-store caching, and a same-origin-only CSP. Submit a token and confirm the page clears the field, calls only `GET /me`, identifies the authenticated seat using text rendering, and does not persist the token.
 76. On any configuration without the local-profile marker, confirm `GET /` returns `404`. Run `ovue serve --open-browser` with a loopback local profile and confirm it opens the local connection-check page; reject this option otherwise.
+77. Confirm `GET /me` returns only the authenticated seat's ID, handle, display name, and role, with no token material or other seats' data. Submit a valid token on the local connection-check page and confirm it identifies that seat and shows its inbox endpoint; submit an invalid token and confirm it reports authentication failure without retaining the input.
 
 Receiver checks 50 and 56 require a compliant receiving client; they cannot be demonstrated by the acknowledgement endpoint alone.
 

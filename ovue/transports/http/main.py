@@ -61,7 +61,7 @@ class OvueRequestHandler(BaseHTTPRequestHandler):
             self.close_connection = True
 
     def do_GET(self) -> None:
-        """Route authenticated directory, inbox, and stream requests."""
+        """Route local diagnostics and authenticated seat or inbox requests."""
         app = self._application()
         split = urlsplit(self.path)
         try:
@@ -90,6 +90,17 @@ class OvueRequestHandler(BaseHTTPRequestHandler):
             return
         seat = self._authenticate(app)
         if seat is None:
+            return
+        if split.path == "/me":
+            self._json(
+                HTTPStatus.OK,
+                {
+                    "id": seat.id,
+                    "handle": seat.handle,
+                    "display_name": seat.display_name,
+                    "role": seat.role,
+                },
+            )
             return
         if split.path == "/seats":
             self._json(HTTPStatus.OK, {"items": seat_directory(app.seats)})

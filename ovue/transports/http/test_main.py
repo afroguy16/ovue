@@ -156,6 +156,15 @@ def test_send_directory_inbox_ack_and_cross_seat_access(http_server: Any) -> Non
     }
     assert "token" not in json.dumps(directory).lower()
 
+    status, identity = request(server, "GET", "/me", token=recipient_token)
+    assert status == 200
+    assert identity == {
+        "id": recipient_id,
+        "handle": "reviewer",
+        "display_name": "Ari",
+        "role": "Reviewer",
+    }
+
     status, inbox = request(
         server, "GET", f"/inbox/{recipient_id}?unread=1", token=recipient_token
     )
@@ -191,7 +200,9 @@ def test_local_root_serves_connection_check_without_auth(http_server: Any) -> No
     assert response.getheader("X-Content-Type-Options") == "nosniff"
     assert "connect-src 'self'" in response.getheader("Content-Security-Policy", "")
     assert 'type="password"' in page
-    assert 'fetch("/seats"' in page
+    assert 'fetch("/me"' in page
+    assert 'id="seat-name"' in page
+    assert 'id="inbox-endpoint"' in page
     assert "localStorage" not in page
     assert "sessionStorage" not in page
     assert "textContent" in page
@@ -289,6 +300,10 @@ def test_http_requires_a_bearer_header_and_ignores_no_query_token(
     }
 
     status, error = request(server, "GET", "/seats", token="invalid-token")
+    assert status == 401
+    assert error == {"error": "unauthorized"}
+
+    status, error = request(server, "GET", "/me")
     assert status == 401
     assert error == {"error": "unauthorized"}
 

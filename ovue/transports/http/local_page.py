@@ -29,12 +29,27 @@ def render_local_connection_page(nonce: str) -> bytes:
       <button id="submit" type="submit">Check connection</button>
     </form>
     <p id="result" role="status" aria-live="polite"></p>
+    <section id="connected-seat" hidden>
+      <h2 id="seat-name"></h2>
+      <p>Role: <span id="seat-role"></span></p>
+      <p>Your seat ID</p>
+      <code id="seat-id"></code>
+      <h3>Next step</h3>
+      <p>Share this seat ID with teammates so they can send you pointers.</p>
+      <p>Your unread inbox endpoint:</p>
+      <code id="inbox-endpoint"></code>
+    </section>
   </main>
   <script nonce="{nonce}">
     const form = document.getElementById("token-form");
     const tokenInput = document.getElementById("token");
     const submitButton = document.getElementById("submit");
     const result = document.getElementById("result");
+    const connectedSeat = document.getElementById("connected-seat");
+    const seatName = document.getElementById("seat-name");
+    const seatRole = document.getElementById("seat-role");
+    const seatId = document.getElementById("seat-id");
+    const inboxEndpoint = document.getElementById("inbox-endpoint");
 
     form.addEventListener("submit", async (event) => {{
       event.preventDefault();
@@ -46,7 +61,7 @@ def render_local_connection_page(nonce: str) -> bytes:
       token = "";
 
       try {{
-        const response = await fetch("/seats", {{
+        const response = await fetch("/me", {{
           method: "GET",
           headers,
           cache: "no-store",
@@ -60,9 +75,15 @@ def render_local_connection_page(nonce: str) -> bytes:
             : `Ovue returned HTTP ${{response.status}}.`;
           return;
         }}
-        const directory = await response.json();
-        const count = Array.isArray(directory.items) ? directory.items.length : 0;
-        result.textContent = `Connected. Ovue returned ${{count}} seats.`;
+        const seat = await response.json();
+        seatName.textContent = `${{seat.display_name}} (@${{seat.handle}})`;
+        seatRole.textContent = seat.role;
+        seatId.textContent = seat.id;
+        inboxEndpoint.textContent =
+          `GET /inbox/${{encodeURIComponent(seat.id)}}?unread=1`;
+        connectedSeat.hidden = false;
+        form.hidden = true;
+        result.textContent = "Connected to Ovue.";
       }} catch {{
         result.textContent =
           "Could not reach Ovue. Check that the local server is running.";
@@ -70,7 +91,9 @@ def render_local_connection_page(nonce: str) -> bytes:
         headers.delete("Authorization");
         tokenInput.value = "";
         submitButton.disabled = false;
-        tokenInput.focus();
+        if (!form.hidden) {{
+          tokenInput.focus();
+        }}
       }}
     }});
   </script>

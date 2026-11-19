@@ -9,8 +9,10 @@ def test_local_connection_page_uses_only_transient_same_origin_auth() -> None:
 
     assert '<input id="token" name="token" type="password"' in page
     assert 'autocomplete="new-password"' in page
-    assert 'fetch("/seats"' in page
+    assert 'fetch("/me"' in page
     assert "Authorization: `Bearer ${token}`" in page
+    assert "Share this seat ID with teammates" in page
+    assert "GET /inbox/${encodeURIComponent(seat.id)}?unread=1" in page
     assert "localStorage" not in page
     assert "sessionStorage" not in page
     assert "document.cookie" not in page
