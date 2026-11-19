@@ -5,6 +5,7 @@ from __future__ import annotations
 import ipaddress
 import re
 import tomllib
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -44,6 +45,7 @@ class Settings:
     max_replay_events: int = 1000
     max_http_workers: int = 160
     request_timeout_seconds: int = 10
+    local_profile: bool = False
 
     @property
     def database_path(self) -> Path:
@@ -75,17 +77,14 @@ def load_settings(config_path: Path) -> Settings:
     retention = _table(raw, "retention")
     server = _table(raw, "server", optional=True)
     limits = _table(raw, "limits", optional=True)
+    local = _table(raw, "local", optional=True)
 
     allowed_hosts_raw = reference.get("allowed_hosts", [])
     if not isinstance(allowed_hosts_raw, list) or not all(
         isinstance(host, str) and host for host in allowed_hosts_raw
     ):
         raise ConfigurationError("reference.allowed_hosts must be a list of hostnames")
-    allowed_hosts = frozenset(host.lower() for host in allowed_hosts_raw)
-    if any(not _is_allowed_hostname(host) for host in allowed_hosts):
-        raise ConfigurationError(
-            "reference.allowed_hosts entries must be exact ASCII hostnames"
-        )
+    allowed_hosts = normalize_allowed_hosts(allowed_hosts_raw)
 
     data_dir_value = server.get("data_dir", "~/.local/share/ovue")
     if not isinstance(data_dir_value, str) or not data_dir_value:
@@ -155,6 +154,7 @@ def load_settings(config_path: Path) -> Settings:
             limits.get("request_timeout_seconds", 10),
             "limits.request_timeout_seconds",
         ),
+        local_profile=_boolean(local.get("profile", False), "local.profile"),
     )
     if settings.max_body_bytes > 4096:
         raise ConfigurationError("limits.max_body_bytes cannot exceed 4096")
@@ -166,6 +166,8 @@ def load_settings(config_path: Path) -> Settings:
         raise ConfigurationError(
             "limits.max_http_workers must exceed limits.max_streams_global"
         )
+    if settings.local_profile and not settings.local_deployment:
+        raise ConfigurationError("A local profile must use a loopback listener")
     if not settings.local_deployment and (certfile is None or keyfile is None):
         raise ConfigurationError("Non-local listeners require TLS certificate and key")
     if certfile is not None and not certfile.is_file():
@@ -204,6 +206,24 @@ def _optional_path(value: object, name: str) -> Path | None:
     if not isinstance(value, str) or not value:
         raise ConfigurationError(f"{name} must be a path")
     return Path(value).expanduser().resolve()
+
+
+def normalize_allowed_hosts(hosts: Sequence[str]) -> frozenset[str]:
+    """Validate exact DNS host entries and return their lowercase unique values."""
+    normalized = frozenset(host.lower() for host in hosts)
+    if any(not _is_allowed_hostname(host) for host in normalized):
+        raise ConfigurationError(
+            "Allowed hosts must be exact ASCII DNS hostnames without wildcards, "
+            "IP literals, trailing dots, ports, paths, or schemes"
+        )
+    return normalized
+
+
+def _boolean(value: object, name: str) -> bool:
+    """Require a real boolean for an optional configuration flag."""
+    if not isinstance(value, bool):
+        raise ConfigurationError(f"{name} must be a boolean")
+    return value
 
 
 def _is_allowed_hostname(value: str) -> bool:

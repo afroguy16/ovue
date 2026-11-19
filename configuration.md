@@ -9,6 +9,8 @@ Ovue reads TOML configuration. Finite storage and retention values are required 
 
 The installed `ovue` command and `python -m ovue` call the same CLI entry point. Both accept the same options and commands. Put the global `--config` option before the command, for example `ovue --config ~/.config/ovue/config.toml serve`. If omitted, Ovue reads `~/.config/ovue/config.toml`.
 
+For local use, `ovue init --local` creates that configuration with finite development limits, a private file, and a loopback listener. Repeat `--allow-host <hostname>` for each exact external reference host; omitting it leaves the allowlist empty. Initialization does not replace an existing configuration.
+
 Startup loads and validates the configuration before starting the HTTP server or opening stores for an administrative command. Invalid or missing required values stop the command with a safe configuration error.
 
 ## Settings

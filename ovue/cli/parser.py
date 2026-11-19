@@ -19,6 +19,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="path to the operator's TOML configuration file",
     )
     commands = parser.add_subparsers(dest="command", required=True)
+    initialize = commands.add_parser("init", help="create a local configuration")
+    initialize.add_argument(
+        "--local",
+        action="store_true",
+        required=True,
+        help="create a loopback-only local configuration",
+    )
+    initialize.add_argument(
+        "--allow-host",
+        action="append",
+        default=[],
+        metavar="HOSTNAME",
+        help="allow an exact external reference hostname; repeat as needed",
+    )
     commands.add_parser("serve", help="start the HTTP and SSE service")
 
     seats = commands.add_parser("seat", help="manage registered seats")

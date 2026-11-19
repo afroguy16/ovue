@@ -12,21 +12,22 @@ source .venv/bin/activate
 python -m pip install --editable '.[dev]'
 ```
 
-Copy [`ovue.example.toml`](ovue.example.toml) to `~/.config/ovue/config.toml`. Set the reference hosts used by your team and replace each `REPLACE_WITH_FINITE_INTEGER` marker with an explicit finite value. Ovue refuses to start until those values are set.
+Create a local configuration. Add one `--allow-host` option for each exact external hostname you use; omit the options to keep external references disabled.
 
 ```sh
-mkdir -p ~/.config/ovue
-cp ovue.example.toml ~/.config/ovue/config.toml
+ovue init --local --allow-host app.notion.com
 ```
 
+Then start Ovue:
+
 ```sh
-ovue --config ~/.config/ovue/config.toml serve
+ovue serve
 ```
 
 In another terminal, register a seat. Its bearer token is displayed once, only when the command is run in a terminal. Save it securely for the seat owner.
 
 ```sh
-ovue --config ~/.config/ovue/config.toml seat create \
+ovue seat create \
   --handle writer --display-name Ese --role Writer
 ```
 

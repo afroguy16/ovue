@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TextIO
 
-from ovue.cli import maintenance, pointer, seat, token
+from ovue.cli import initialize, maintenance, pointer, seat, token
 from ovue.cli.context import open_stores
 from ovue.cli.parser import build_parser
 from ovue.configuration import ConfigurationError, load_settings
@@ -61,6 +61,11 @@ def main(
 def _dispatch(args: argparse.Namespace, output: TextIO) -> None:
     """Open only the resources required by the requested operator action."""
     config_path: Path = args.config
+    if args.command == "init":
+        created_path = initialize.initialize_local(config_path, args.allow_host)
+        print(f"Created local configuration: {created_path}", file=output)
+        print("Next: ovue serve", file=output)
+        return
     if args.command == "serve":
         serve(load_settings(config_path))
         return
