@@ -148,8 +148,8 @@ def test_send_directory_inbox_ack_and_cross_seat_access(http_server: Any) -> Non
     assert isinstance(directory, dict)
     assert directory["items"][-1] == {
         "id": "operator",
-        "handle": "founder",
-        "display_name": "Founder",
+        "handle": "operator",
+        "display_name": "Operator",
         "role": "operator",
     }
     assert "token" not in json.dumps(directory).lower()

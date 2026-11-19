@@ -99,10 +99,10 @@ def test_concurrent_registration_cannot_overbook_global_capacity(
     storage.close()
 
 
-def test_directory_lists_registered_seats_and_founder_without_tokens(
+def test_directory_lists_registered_seats_and_operator_without_tokens(
     tmp_path: Path,
 ) -> None:
-    """Include the reserved Founder identity without exposing credential data."""
+    """Include the reserved operator identity without exposing credential data."""
     storage = SeatStorage(
         tmp_path / "ovue.sqlite3", max_logical_database_bytes=1_000_000
     )
@@ -119,8 +119,8 @@ def test_directory_lists_registered_seats_and_founder_without_tokens(
     assert directory[0]["handle"] == "writer"
     assert directory[-1] == {
         "id": "operator",
-        "handle": "founder",
-        "display_name": "Founder",
+        "handle": "operator",
+        "display_name": "Operator",
         "role": "operator",
     }
     assert all("token" not in field for seat in directory for field in seat)

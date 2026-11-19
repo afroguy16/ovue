@@ -8,7 +8,7 @@ The seats package owns registered identities, handles, authentication, the authe
 ## Responsibilities
 
 - Create and list registered seats without exposing token material.
-- Normalize handles and reserve the Founder identity.
+- Normalize handles and reserve the operator identity.
 - Resolve bearer tokens to authenticated seat identities.
 - Rotate and revoke tokens while keeping seat IDs stable.
 - Provide seat IDs to pointer validation and expose a safe directory including the operator.

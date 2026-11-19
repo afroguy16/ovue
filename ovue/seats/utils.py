@@ -12,6 +12,6 @@ def normalize_handle(value: str) -> str:
     if not _HANDLE_PATTERN.fullmatch(value):
         raise ValueError("Handle must be 2–32 ASCII letters, digits, _ or -")
     normalized = value.lower()
-    if normalized == "founder":
-        raise ValueError("The handle founder is reserved")
+    if normalized == "operator":
+        raise ValueError("The handle operator is reserved")
     return normalized

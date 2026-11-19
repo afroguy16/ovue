@@ -62,7 +62,7 @@ def test_load_settings_requires_worker_capacity_beyond_stream_capacity(
 
 
 def test_load_settings_requires_storage_and_retention_estimates(tmp_path: Path) -> None:
-    """Refuse to start when a Founder-confirmed finite value is missing."""
+    """Refuse to start when a required finite value is missing."""
     config = write_config(tmp_path)
     config.write_text(
         "[reference]\nallowed_hosts=[]\n[storage]\n[retention]\n[limits]\nmax_unread_global=10\n",

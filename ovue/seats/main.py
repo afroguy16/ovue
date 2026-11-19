@@ -107,7 +107,7 @@ def token_is_active(storage: SeatStore, seat_id: str, token: str) -> bool:
 
 
 def seat_directory(storage: SeatStore) -> tuple[dict[str, str], ...]:
-    """Return registered seats and Founder without exposing any token data."""
+    """Return registered seats and the operator without exposing token data."""
     registered = tuple(
         {
             "id": seat.id,
@@ -119,8 +119,8 @@ def seat_directory(storage: SeatStore) -> tuple[dict[str, str], ...]:
     )
     operator = {
         "id": "operator",
-        "handle": "founder",
-        "display_name": "Founder",
+        "handle": "operator",
+        "display_name": "Operator",
         "role": "operator",
     }
     return (*registered, operator)

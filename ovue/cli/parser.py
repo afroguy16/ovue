@@ -41,7 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
     rotate = token_commands.add_parser("rotate", help="replace a seat's token")
     rotate.add_argument("seat_id")
 
-    send = commands.add_parser("send", help="send a pointer as the Founder")
+    send = commands.add_parser("send", help="send a pointer as the operator")
     send.add_argument("--to", action="append", required=True, dest="recipients")
     send.add_argument("--ref-url", required=True)
     send.add_argument("--title")

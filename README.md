@@ -12,7 +12,7 @@ source .venv/bin/activate
 python -m pip install --editable '.[dev]'
 ```
 
-Copy [`ovue.example.toml`](ovue.example.toml) to `~/.config/ovue/config.toml`. Set the reference hosts used by your team and replace each `FOUNDER_CONFIRM` placeholder with a finite value you have approved. Ovue refuses to start until those values are set.
+Copy [`ovue.example.toml`](ovue.example.toml) to `~/.config/ovue/config.toml`. Set the reference hosts used by your team and replace each `REPLACE_WITH_FINITE_INTEGER` marker with an explicit finite value. Ovue refuses to start until those values are set.
 
 ```sh
 mkdir -p ~/.config/ovue
@@ -57,7 +57,7 @@ ovue_curl() {
 BASE_URL=http://127.0.0.1:8765
 SEAT_ID='<recipient-seat-id>'
 
-# Find IDs and handles for registered seats and the Founder.
+# Find IDs and handles for registered seats and the operator.
 ovue_curl "$BASE_URL/seats"
 
 # Send a pointer to a recipient ID.
@@ -75,7 +75,7 @@ ovue_curl -X POST "$BASE_URL/ack/<delivery-id>"
 ovue_curl -N -H 'Last-Event-ID: <recipient-sequence>' "$BASE_URL/stream/$SEAT_ID"
 ```
 
-The local admin commands also support token rotation and revocation, sending and acknowledging as the Founder, reading traffic history, and purging expired records. Run `ovue --help` for the command list.
+The local admin commands also support token rotation and revocation, sending and acknowledging as the operator, reading traffic history, and purging expired records. Run `ovue --help` for the command list.
 
 ## Tests and checks
 

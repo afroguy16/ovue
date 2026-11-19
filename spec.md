@@ -237,7 +237,7 @@ The sender authenticates with a bearer token in the `Authorization: Bearer <toke
 
 Handles are unique within one Ovue deployment, compared case-insensitively, and normalized to lowercase. A handle contains 2–32 ASCII letters, digits, underscores, or hyphens; the first character must be a letter or digit. Handles are shown with an `@` prefix in user interfaces and stored without it. The local admin CLI can rename a handle. Renaming does not change the seat ID, token, or existing pointer deliveries. Handles are not credentials.
 
-`GET /seats` is read-only and available to any authenticated seat. It returns every registered seat plus the reserved `operator` identity, with IDs, handles, display names, and roles. The operator has ID `operator`, handle `founder`, display name `Founder`, and role `operator`. The response never returns tokens or token hashes. Agents resolve handles through this directory, then address pointers using seat IDs; `to`, inbox, stream, and acknowledgement contracts continue to use IDs.
+`GET /seats` is read-only and available to any authenticated seat. It returns every registered seat plus the reserved `operator` identity, with IDs, handles, display names, and roles. The operator has ID `operator`, handle `operator`, display name `Operator`, and role `operator`. The response never returns tokens or token hashes. Agents resolve handles through this directory, then address pointers using seat IDs; `to`, inbox, stream, and acknowledgement contracts continue to use IDs.
 
 Agent-facing HTTP exposes only send, seat directory, inbox, acknowledgement, and stream actions. Administration is performed through a local command-line tool.
 
@@ -345,13 +345,13 @@ A send is one atomic transaction covering pointer creation, every recipient deli
 
 The database and traffic log are sensitive. On local installations, their parent directory is owned by the operator with mode `0700`, and files use mode `0600`. Backups and exports inherit the same access requirements. At-rest encryption is required when the underlying disk or backup location is not already encrypted.
 
-Every deployment must configure finite limits for pointer-row count and logical SQLite database size. The Founder will confirm the default values before the first run; until then, use `FOUNDER_CONFIRM` placeholders and require explicit finite values at startup. The service warns the operator at 80% of either logical limit. The logical database-size measure is `(page_count - freelist_count) * page_size`, using SQLite's `PRAGMA page_count`, `PRAGMA freelist_count`, and `PRAGMA page_size`.
+Every deployment must configure finite limits for pointer-row count and logical SQLite database size. The configuration example uses generic replacement markers until operators choose values; startup requires explicit finite values. The service warns the operator at 80% of either logical limit. The logical database-size measure is `(page_count - freelist_count) * page_size`, using SQLite's `PRAGMA page_count`, `PRAGMA freelist_count`, and `PRAGMA page_size`.
 
 Set `PRAGMA max_page_count` on every SQLite connection that can write the shared database, including pointer and seat storage, to cap the physical file at 115% of the logical byte limit, rounded up to a whole page. This 15% headroom is reserved for acknowledgements, seat revocation and token rotation, and purge operations; sends are rejected at the logical limit and cannot consume it. These recovery and control operations remain available while the logical send limit is full. Freed pages remain reusable after purge even when SQLite does not shrink the file.
 
 The service checks both limits inside the send transaction, after `BEGIN IMMEDIATE` acquires SQLite's write lock. The transaction includes pointer creation, every recipient delivery, quota accounting, and per-recipient sequence assignment. This serializes concurrent send checks and preserves all-or-nothing pointer creation.
 
-The MVP includes a local admin purge command. It deletes a pointer only when every recipient delivery is acknowledged (`read`) and the pointer is older than the configured retention age. It must never delete a pointer with an unread delivery. The command also trims traffic-log rows older than a separately configured log-retention age. Both ages are configurable; use `FOUNDER_CONFIRM` until the Founder sets their defaults. These deletions free SQLite pages for reuse; an optional `VACUUM` may shrink the physical database file. Non-local deployment also requires protected backups before startup.
+The MVP includes a local admin purge command. It deletes a pointer only when every recipient delivery is acknowledged (`read`) and the pointer is older than the configured retention age. It must never delete a pointer with an unread delivery. The command also trims traffic-log rows older than a separately configured log-retention age. Both ages are configurable and must be finite. These deletions free SQLite pages for reuse; an optional `VACUUM` may shrink the physical database file. Non-local deployment also requires protected backups before startup.
 
 The traffic log records `created_at`, pointer ID, delivery ID, `from`, `to`, `ref`, description, kind, and state. It is structured JSON, one event per line. Fields are length-limited and safely escaped; control and directionality characters cannot create extra records or misleading rendering. The log reader renders fields safely and does not interpret URLs, titles, or descriptions as markup or commands. The audit-log reader is restricted to the operator.
 
@@ -377,7 +377,7 @@ The local admin CLI must be able to:
 
 Rotation also works for a seat whose previous token has been revoked: it issues a new usable token without changing the seat ID. The revoked token remains unusable.
 
-Token and handle administration are operator capabilities, not agent capabilities. The seat ID `operator` and handle `founder` are permanently reserved; seat creation, import, and rename reject attempts to claim either reserved value.
+Token and handle administration are operator capabilities, not agent capabilities. The seat ID and handle `operator` are permanently reserved; seat creation, import, and rename reject attempts to claim either reserved value.
 
 The local admin CLI is restricted to the same operating-system user that owns the service data directory and uses `umask 077`. Raw tokens are displayed only when stdout is an operator-controlled terminal. The local OS user is a trusted boundary; compromise of that user means full service compromise. The terminal, including scrollback and any recording or screen-capture tools, is part of the trust boundary during one-time token display.
 
@@ -389,11 +389,11 @@ Configure per-seat and global limits for send rate, invalid send attempts, recip
 
 Each registered seat receives a nonzero reservation of at least 1 open stream and 10 unread deliveries. Global stream and unread limits must be at least the number of registered seats multiplied by those reservations; otherwise seat creation or capacity reduction is rejected. A seat may use its reservation and only unused capacity beyond all reservations.
 
-The global pointer-row and SQLite file-size limits must be finite and configurable. The Founder will confirm the default values before the first run; until then, use `FOUNDER_CONFIRM` placeholders and require explicit finite values at startup. The service warns the operator at 80% of either limit. It checks capacity inside the `BEGIN IMMEDIATE` send transaction, serializing concurrent sends. The MVP has no per-seat storage quota; the operator warning and seat revocation are the controls. A per-sender cap may be added later.
+The global pointer-row and SQLite file-size limits must be finite and configurable. The configuration example uses generic replacement markers; startup requires explicit finite values. The service warns the operator at 80% of either limit. It checks capacity inside the `BEGIN IMMEDIATE` send transaction, serializing concurrent sends. The MVP has no per-seat storage quota; the operator warning and seat revocation are the controls. A per-sender cap may be added later.
 
 ### Local first-run setup
 
-`ovue init --local` creates a local-only configuration at `~/.config/ovue/config.toml`, with explicit finite development values and the default data directory written into the file. The generated listener binds only to `127.0.0.1`, requires no TLS files, and starts with an empty reference-host allowlist. It must not include `FOUNDER_CONFIRM` placeholders or enable provider hosts by default. The generated file carries a marker identifying it as a local profile; startup rejects that profile if configured to bind to a non-loopback address. Hosted deployments still require their own explicitly confirmed finite limits and TLS configuration.
+`ovue init --local` creates a local-only configuration at `~/.config/ovue/config.toml`, with explicit finite development values and the default data directory written into the file. The generated listener binds only to `127.0.0.1`, requires no TLS files, and starts with an empty reference-host allowlist. It must contain no replacement markers or provider-host defaults. The generated file carries a marker identifying it as a local profile; startup rejects that profile if configured to bind to a non-loopback address. Hosted deployments still require their own finite limits and TLS configuration.
 
 Initialization must not overwrite an existing configuration. On success, it prints the next command, `ovue serve`; the developer can create a seat with the existing local admin command. This path must allow a developer to start Ovue without copying an example file, editing deployment placeholders, or supplying `--config`. External reference hosts can be added later as exact allowlist entries.
 
@@ -467,11 +467,11 @@ Any non-local deployment requires HTTPS and rejects startup if a cleartext liste
 62. Confirm `GET /seats` returns each seat's handle without returning token data, and handle lookup is case-insensitive.
 63. Attempt to create two seats with handles that differ only by letter case; confirm the duplicate is rejected.
 64. Rename a seat handle and confirm the seat ID, token, and existing pointer deliveries remain unchanged while the directory returns the new handle.
-65. Attempt to create or rename a seat to the reserved handle `founder`; confirm the operation is rejected.
+65. Attempt to create or rename a seat to the reserved handle `operator`; confirm the operation is rejected.
 66. Open slow partial HTTP requests until the configured worker limit is reached; confirm excess requests receive `503 server_busy`, slow requests close at the total header/body deadline, and the workers become available again.
 67. Reach the logical SQLite limit, then perform acknowledgement, seat revocation and rotation, and purge through their separate connections; confirm each succeeds and every writer connection observes the same `max_page_count`.
 68. Confirm `ovue --help` and `python -m ovue --help` expose the same command tree, and missing required configuration prevents HTTP startup.
-69. Run `ovue init --local` without an existing config; confirm it creates a finite loopback-only config with no TLS requirement, `FOUNDER_CONFIRM` placeholders, or provider-host defaults, then confirm `ovue serve` uses it without `--config`.
+69. Run `ovue init --local` without an existing config; confirm it creates a finite loopback-only config with no TLS requirement, replacement markers, or provider-host defaults, then confirm `ovue serve` uses it without `--config`.
 70. Run `ovue init --local` when the default config already exists; confirm it reports the conflict and leaves the existing file unchanged.
 71. Change the generated local profile to a non-loopback listener; confirm the local-profile marker causes startup to reject it.
 

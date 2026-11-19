@@ -131,7 +131,7 @@ def test_rename_keeps_seat_id_and_token_usable(tmp_path: Path) -> None:
     storage.close()
 
 
-def test_reserved_founder_handle_cannot_be_created_or_assigned(
+def test_reserved_operator_handle_cannot_be_created_or_assigned(
     tmp_path: Path,
 ) -> None:
     """Keep the operator's identity from being claimed by a registered seat."""
@@ -139,9 +139,9 @@ def test_reserved_founder_handle_cannot_be_created_or_assigned(
         tmp_path / "ovue.sqlite3", max_logical_database_bytes=1_000_000
     )
     with pytest.raises(ValueError, match="reserved"):
-        storage.create_seat("founder", "Other", "Writer")
+        storage.create_seat("operator", "Other", "Writer")
     seat, _ = storage.create_seat("writer", "Ese", "Writer")
 
     with pytest.raises(ValueError, match="reserved"):
-        storage.rename_handle(seat.id, "Founder")
+        storage.rename_handle(seat.id, "Operator")
     storage.close()

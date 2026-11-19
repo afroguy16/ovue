@@ -13,7 +13,7 @@ The CLI is Ovue's local administration and service-start entry point. It transla
 | `main.py` | Dispatch parsed commands and report safe operator-facing errors. |
 | `parser.py` | Define the command names, options, and help text. |
 | `context.py` | Load settings and open protected seat and pointer stores for local commands. |
-| `pointer.py` | Send as the Founder, read the operator inbox, and acknowledge its deliveries through operations. |
+| `pointer.py` | Send as the operator, read the operator inbox, and acknowledge its deliveries through operations. |
 | `seat.py` | Create, list, and rename seats through the seats boundary. |
 | `token.py` | Revoke or rotate seat tokens through the seats boundary. |
 | `maintenance.py` | Read traffic history and run configured purge operations. |
@@ -21,7 +21,7 @@ The CLI is Ovue's local administration and service-start entry point. It transla
 
 ## Commands
 
-The command tree supports creating a local configuration with `ovue init --local`; starting the HTTP service; creating, listing, and renaming seats; revoking or rotating tokens; sending as the Founder; reading and acknowledging the operator inbox; reading traffic; and purging eligible history. `ovue --help` and each command's `--help` show the accepted arguments.
+The command tree supports creating a local configuration with `ovue init --local`; starting the HTTP service; creating, listing, and renaming seats; revoking or rotating tokens; sending as the operator; reading and acknowledging the operator inbox; reading traffic; and purging eligible history. `ovue --help` and each command's `--help` show the accepted arguments.
 
 `init --local` writes the default local configuration through the configuration boundary. It writes explicit finite development values, marks the file as local-only, binds to loopback, and does not require TLS or enable external reference hosts. It refuses to replace an existing configuration. After it succeeds, `ovue serve` starts without a `--config` argument. Startup rejects the local-only profile if its listener is changed to a non-loopback address.
 

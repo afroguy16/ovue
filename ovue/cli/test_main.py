@@ -217,7 +217,7 @@ def test_operator_commands_send_read_acknowledge_log_and_purge(
     seat_data = json.loads(created_output.getvalue())
     seat_id = seat_data["id"]
 
-    founder_send = io.StringIO()
+    operator_send = io.StringIO()
     main(
         [
             "--config",
@@ -234,10 +234,10 @@ def test_operator_commands_send_read_acknowledge_log_and_purge(
             "--kind",
             "done",
         ],
-        output=founder_send,
+        output=operator_send,
     )
     assert (
-        json.loads(founder_send.getvalue())["deliveries"][0]["recipient_id"] == seat_id
+        json.loads(operator_send.getvalue())["deliveries"][0]["recipient_id"] == seat_id
     )
 
     seats = SeatStorage(
@@ -252,7 +252,7 @@ def test_operator_commands_send_read_acknowledge_log_and_purge(
             ("operator",),
             "https://work.example.org/items/43",
             None,
-            "Needs Founder decision",
+            "Needs operator decision",
             "needs-decision",
         ),
         sender=Sender(sender.id, sender.display_name, sender.role),

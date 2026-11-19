@@ -1,4 +1,4 @@
-# Copy this file to ~/.config/ovue/config.toml and confirm the proposed
+# Copy this file to ~/.config/ovue/config.toml and choose finite
 # storage and retention values before the first run.
 
 [reference]
@@ -11,19 +11,19 @@ port = 8765
 data_dir = "~/.local/share/ovue"
 
 [storage]
-# Replace each placeholder with a confirmed finite value before first startup.
+# Replace each marker with a finite integer before first startup.
 # Current proposals, not measured defaults: 100000 records and 268435456 bytes.
-max_pointer_records = "FOUNDER_CONFIRM"
-max_logical_database_bytes = "FOUNDER_CONFIRM"
+max_pointer_records = "REPLACE_WITH_FINITE_INTEGER"
+max_logical_database_bytes = "REPLACE_WITH_FINITE_INTEGER"
 
 [retention]
 # Current proposals, not measured defaults: 30 and 90 days.
-acknowledged_pointer_max_age_days = "FOUNDER_CONFIRM"
-traffic_log_max_age_days = "FOUNDER_CONFIRM"
+acknowledged_pointer_max_age_days = "REPLACE_WITH_FINITE_INTEGER"
+traffic_log_max_age_days = "REPLACE_WITH_FINITE_INTEGER"
 
 [limits]
 # Current proposal: 1000. Choose a finite total at least 10 per registered seat.
-max_unread_global = "FOUNDER_CONFIRM"
+max_unread_global = "REPLACE_WITH_FINITE_INTEGER"
 send_per_minute = 60
 invalid_per_minute = 60
 max_http_workers = 160

@@ -19,7 +19,7 @@ def test_normalize_handle_accepts_valid_ascii_handles(
 
 @pytest.mark.parametrize(
     "submitted",
-    ["a", "_seat", "-seat", "has space", "has.dot", "founder", "FOUNDER", "x" * 33],
+    ["a", "_seat", "-seat", "has space", "has.dot", "operator", "OPERATOR", "x" * 33],
 )
 def test_normalize_handle_rejects_invalid_or_reserved_values(submitted: str) -> None:
     """Reject malformed handles and the reserved operator handle."""
