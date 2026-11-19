@@ -21,7 +21,9 @@ The CLI is Ovue's local administration and service-start entry point. It transla
 
 ## Commands
 
-The command tree supports starting the HTTP service; creating, listing, and renaming seats; revoking or rotating tokens; sending as the Founder; reading and acknowledging the operator inbox; reading traffic; and purging eligible history. `ovue --help` and each command's `--help` show the accepted arguments.
+The command tree supports creating a local configuration with `ovue init --local`; starting the HTTP service; creating, listing, and renaming seats; revoking or rotating tokens; sending as the Founder; reading and acknowledging the operator inbox; reading traffic; and purging eligible history. `ovue --help` and each command's `--help` show the accepted arguments.
+
+`init --local` writes the default local configuration through the configuration boundary. It writes explicit finite development values, marks the file as local-only, binds to loopback, and does not require TLS or enable external reference hosts. It refuses to replace an existing configuration. After it succeeds, `ovue serve` starts without a `--config` argument. Startup rejects the local-only profile if its listener is changed to a non-loopback address.
 
 The optional `--config` path is a global option and appears before the command, for example `ovue --config ~/.config/ovue/config.toml serve`. If omitted, the CLI uses `~/.config/ovue/config.toml`.
 
@@ -34,6 +36,7 @@ flowchart LR
     Operator[Operator] --> Entry[ovue or python -m ovue]
     Entry --> Parser[Parse command]
     Parser --> Dispatch[Dispatch command]
+    Dispatch -->|init --local| LocalConfig[Create local config]
     Dispatch -->|serve| Settings[Load and validate config]
     Settings --> HTTP[Start HTTP transport]
     Dispatch -->|admin command| Context[Load config and open local stores]

@@ -33,7 +33,7 @@ The service must not:
 
 ## 3. Package and module boundaries
 
-Ovue separates entry points, operations, seat identity, and persistence by responsibility. HTTP and CLI call the same operations. Tests live beside the code they exercise. The tree and diagram below show the agreed package shape; the status colors show the refactor's current progress.
+Ovue separates entry points, operations, seat identity, and persistence by responsibility. HTTP and CLI call the same operations. Tests live beside the code they exercise. The tree and diagram below show the agreed package shape; the status colors show implementation progress.
 
 ```text
 ovue/                         # standalone project and repository root
@@ -131,12 +131,13 @@ flowchart LR
     classDef complete fill:#dcfce7,stroke:#16a34a,color:#14532d;
     classDef partial fill:#fef3c7,stroke:#d97706,color:#78350f;
     classDef external fill:#dbeafe,stroke:#2563eb,color:#1e3a8a;
-    class HTTP,Admin,Operations,Store,SQLite complete;
+    class HTTP,Operations,Store,SQLite complete;
+    class Admin partial;
     class Seats complete;
     class Agent,Operator external;
 ```
 
-**Implementation status:** 🟩 Implemented · 🟨 Partially implemented · ⬜ Not started. Green marks responsibilities implemented at their agreed package boundary; yellow marks responsibilities still being moved into that boundary; blue marks external participants. The color does not certify every deployment scenario.
+**Implementation status:** 🟩 Implemented · 🟨 Partially implemented · ⬜ Not started. Green marks responsibilities implemented at their agreed package boundary; yellow marks responsibilities with required behavior still missing; blue marks external participants. The color does not certify every deployment scenario.
 
 | Box | Responsibility |
 | --- | --- |
@@ -147,7 +148,7 @@ flowchart LR
 | (e) Storage | Persists pointers, deliveries, event sequences, seats, tokens, and traffic rows. |
 | (f) SQLite | Provides durable local storage for operations and seats. |
 | (g) Operator | Uses the local CLI to administer seats, tokens, and pointer history. |
-| (h) Local admin CLI | Manages seats and tokens, sends as operator, reads and acknowledges the operator inbox, reads traffic, and purges history. |
+| (h) Local admin CLI | Creates a local-only configuration, manages seats and tokens, sends as operator, reads and acknowledges the operator inbox, reads traffic, and purges history. |
 
 SSE is a delivery mode of the HTTP transport, not a separate system. The agent opens the HTTP connection, and the service sends pointer events back through it. Future transports, such as MCP, call the same operations and do not implement pointer rules themselves.
 
@@ -362,6 +363,7 @@ Authentication failures are throttled per source and per seat identifier without
 
 The local admin CLI must be able to:
 
+- initialize a local-only configuration with `ovue init --local`;
 - create a registered seat with a unique handle;
 - list seats, handles, and token status;
 - rename a seat handle while keeping its ID stable;
@@ -388,6 +390,12 @@ Configure per-seat and global limits for send rate, invalid send attempts, recip
 Each registered seat receives a nonzero reservation of at least 1 open stream and 10 unread deliveries. Global stream and unread limits must be at least the number of registered seats multiplied by those reservations; otherwise seat creation or capacity reduction is rejected. A seat may use its reservation and only unused capacity beyond all reservations.
 
 The global pointer-row and SQLite file-size limits must be finite and configurable. The Founder will confirm the default values before the first run; until then, use `FOUNDER_CONFIRM` placeholders and require explicit finite values at startup. The service warns the operator at 80% of either limit. It checks capacity inside the `BEGIN IMMEDIATE` send transaction, serializing concurrent sends. The MVP has no per-seat storage quota; the operator warning and seat revocation are the controls. A per-sender cap may be added later.
+
+### Local first-run setup
+
+`ovue init --local` creates a local-only configuration at `~/.config/ovue/config.toml`, with explicit finite development values and the default data directory written into the file. The generated listener binds only to `127.0.0.1`, requires no TLS files, and starts with an empty reference-host allowlist. It must not include `FOUNDER_CONFIRM` placeholders or enable provider hosts by default. The generated file carries a marker identifying it as a local profile; startup rejects that profile if configured to bind to a non-loopback address. Hosted deployments still require their own explicitly confirmed finite limits and TLS configuration.
+
+Initialization must not overwrite an existing configuration. On success, it prints the next command, `ovue serve`; the developer can create a seat with the existing local admin command. This path must allow a developer to start Ovue without copying an example file, editing deployment placeholders, or supplying `--config`. External reference hosts can be added later as exact allowlist entries.
 
 When a recipient already has 100 unread deliveries, a pointer addressed to that recipient is rejected with HTTP `400` and an issue such as `{ "path": ["to", 0], "code": "recipient_inbox_full", "message": "The recipient's inbox is full" }`. This is a temporary condition that clears when the recipient acknowledges a pointer and an unread slot becomes available. It is not a rate-limit response. The unread-capacity check runs inside the same `BEGIN IMMEDIATE` transaction as storage checks and pointer creation. A multi-recipient pointer is all-or-nothing: if any recipient inbox is full, no delivery is created. Purge eligibility and traffic-log retention are defined in section 8.
 
@@ -463,6 +471,9 @@ Any non-local deployment requires HTTPS and rejects startup if a cleartext liste
 66. Open slow partial HTTP requests until the configured worker limit is reached; confirm excess requests receive `503 server_busy`, slow requests close at the total header/body deadline, and the workers become available again.
 67. Reach the logical SQLite limit, then perform acknowledgement, seat revocation and rotation, and purge through their separate connections; confirm each succeeds and every writer connection observes the same `max_page_count`.
 68. Confirm `ovue --help` and `python -m ovue --help` expose the same command tree, and missing required configuration prevents HTTP startup.
+69. Run `ovue init --local` without an existing config; confirm it creates a finite loopback-only config with no TLS requirement, `FOUNDER_CONFIRM` placeholders, or provider-host defaults, then confirm `ovue serve` uses it without `--config`.
+70. Run `ovue init --local` when the default config already exists; confirm it reports the conflict and leaves the existing file unchanged.
+71. Change the generated local profile to a non-loopback listener; confirm the local-profile marker causes startup to reject it.
 
 Receiver checks 50 and 56 require a compliant receiving client; they cannot be demonstrated by the acknowledgement endpoint alone.
 
