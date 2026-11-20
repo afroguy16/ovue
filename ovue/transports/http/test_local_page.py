@@ -22,7 +22,7 @@ def test_local_page_offers_worker_inbox_and_operator_traffic_views() -> None:
     assert "Refresh traffic" in page
     assert "Load older traffic" in page
     assert 'query.set("cursor", operatorCursor)' in page
-    assert 'credentials: "same-origin"' in page
+    assert page.count('credentials: "same-origin"') == 2
     assert "operatorAuthorization" not in page
     assert "localStorage" not in page
     assert "sessionStorage" not in page

@@ -296,7 +296,7 @@ def render_local_page(nonce: str) -> bytes:
           headers: {{ "Content-Type": "application/json" }},
           body: JSON.stringify({{ code }}),
           cache: "no-store",
-          credentials: "omit",
+          credentials: "same-origin",
           redirect: "error",
           referrerPolicy: "no-referrer"
         }});
