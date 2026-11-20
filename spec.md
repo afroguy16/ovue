@@ -33,7 +33,7 @@ The service must not:
 
 ## 3. Package and module boundaries
 
-Ovue owns its contract, message use cases, storage, authentication, and transports inside its package. Its behavior is split by responsibility; no single service file should own all HTTP actions, persistence, and token rules. The tree below describes these boundaries, not a requirement to combine each responsibility into one file. Tests live beside the code they exercise.
+Ovue separates entry points, operations, seat identity, and persistence by responsibility. HTTP and CLI call the same operations. Tests live beside the code they exercise. The tree and diagram below show the agreed package shape; the status colors show implementation progress.
 
 ```text
 ovue/                         # standalone project and repository root
@@ -42,37 +42,118 @@ ovue/                         # standalone project and repository root
 ├── spec.md                   # implementation specification
 └── ovue/                     # importable Python package
     ├── __init__.py
-    ├── services/
+    ├── __main__.py
+    ├── configuration.py
+    ├── cli/
+    │   ├── __init__.py
+    │   ├── main.py
+    │   ├── parser.py
+    │   ├── context.py
+    │   ├── pointer.py
+    │   ├── seat.py
+    │   ├── token.py
+    │   ├── maintenance.py
+    │   ├── test_main.py
+    │   └── spec.md
+    ├── operations/
+    │   ├── main.py
+    │   ├── test_main.py
+    │   ├── validation.py
+    │   ├── test_validation.py
+    │   ├── utils.py
+    │   ├── test_utils.py
+    │   └── spec.md
+    ├── seats/
+    │   ├── main.py
+    │   ├── entities.py
+    │   ├── utils.py
+    │   ├── test_main.py
+    │   ├── test_utils.py
+    │   └── spec.md
     ├── storage/
-    ├── auth/
+    │   ├── main.py
+    │   ├── test_main.py
+    │   ├── seats.py
+    │   ├── test_seats.py
+    │   ├── utils.py
+    │   ├── test_utils.py
+    │   └── spec.md
+    ├── test_configuration.py
+    ├── test_startup.py
     └── transports/
+        └── http/
+            ├── main.py
+            ├── test_main.py
+            ├── server.py
+            ├── test_server.py
+            ├── application.py
+            ├── request.py
+            ├── sse.py
+            ├── limits.py
+            ├── deadline.py
+            ├── local_page.py
+            ├── test_local_page.py
+            └── spec.md
 ```
 
 ```mermaid
 flowchart LR
-    subgraph Message["Ovue package"]
-        HTTP["HTTP transport<br/>(HTTP requests + SSE stream)"]
-        Service[Pointer service]
-        Auth[Seat authentication]
-        Service --> Auth
-        Service --> Store[Durable pointer storage]
-        Service --> Log[Traffic log]
-
-        HTTP <--> Service
+    subgraph People[External participants]
+        direction TB
+        Agent["(a) Agent tool"]
+        Operator["(g) Operator"]
     end
 
-    Agent[Agent tool] <--> |requests and events| HTTP
-    Operator[Operator] --> Admin[Local admin CLI]
-    Admin --> Service
-    Admin --> Auth
-    Admin --> Log
-    SQLite[(SQLite)]
-    Auth --> SQLite
-    Store --> SQLite
-    Log --> SQLite
+    subgraph Ovue["Ovue package"]
+        direction LR
+        subgraph Entry["Entry points"]
+            direction TB
+            HTTP["(b) HTTP transport"]
+            Admin["(h) Local admin CLI"]
+        end
+
+        subgraph Responsibilities["Package responsibilities"]
+            Operations["(c) Operations<br/>send, inbox, replay, ack, traffic, purge"]
+            Seats["(d) Seats<br/>identity, handles, and tokens"]
+            Store["(e) Storage<br/>pointer and seat persistence"]
+        end
+
+        SQLite["(f) SQLite"]
+        Operations --> Store
+        Seats --> Store
+        Store --> SQLite
+    end
+
+    Agent <--> HTTP
+    Operator <--> Admin
+    HTTP <--> Operations
+    HTTP --> Seats
+    Admin --> Operations
+    Admin --> Seats
+
+    classDef complete fill:#dcfce7,stroke:#16a34a,color:#14532d;
+    classDef partial fill:#fef3c7,stroke:#d97706,color:#78350f;
+    classDef external fill:#dbeafe,stroke:#2563eb,color:#1e3a8a;
+    class HTTP,Operations,Store,SQLite complete;
+    class Admin partial;
+    class Seats complete;
+    class Agent,Operator external;
 ```
 
-SSE is a delivery mode of the HTTP transport, not a separate system. The agent opens the HTTP connection, and the service sends pointer events back through it. Future transports, such as MCP, call the same pointer service and do not implement pointer rules themselves.
+**Implementation status:** 🟩 Implemented · 🟨 Partially implemented · ⬜ Not started. Green marks responsibilities implemented at their agreed package boundary; yellow marks responsibilities with required behavior still missing; blue marks external participants. The color does not certify every deployment scenario.
+
+| Box | Responsibility |
+| --- | --- |
+| (a) Agent tool | Sends pointers and receives inbox or stream events through Ovue. |
+| (b) HTTP transport | Handles authenticated agent requests and streams, returns operation results, and serves the local-only worker and operator browser views. |
+| (c) Operations | Validates sends and applies inbox, replay, acknowledgement, traffic-history, and purge behavior. |
+| (d) Seats | Registers seats, manages handles and tokens, authenticates requests, and resolves recipient identities. |
+| (e) Storage | Persists pointers, deliveries, event sequences, seats, tokens, and traffic rows. |
+| (f) SQLite | Provides durable local storage for operations and seats. |
+| (g) Operator | Uses the local CLI to administer seats, tokens, and pointer history. |
+| (h) Local admin CLI | Creates a local-only configuration, creates and hands seats to workers, manages tokens, sends as operator, reads and acknowledges the operator inbox, reads all pointer traffic, and purges history. |
+
+SSE is a delivery mode of the HTTP transport, not a separate system. The agent opens the HTTP connection, and the service sends pointer events back through it. Future transports, such as MCP, call the same operations and do not implement pointer rules themselves.
 
 ## 4. Pointer contract
 
@@ -143,11 +224,15 @@ One pointer has one `pointer_id` and an independent `delivery_id` and `state` fo
 
 SSE events contain one JSON object with the SSE event ID, delivery ID, pointer ID, creation time, sender identity, recipient IDs, reference, description, kind, and state. The receiver must not need another lookup to display a sender such as `From Ese (Writer)`. Recipient IDs in events are intentionally visible workflow metadata to authenticated recipients.
 
-No additional seat metadata is included in the event. The sender identity contains only ID, display name, and role; recipients are represented by IDs.
+No additional seat metadata is included in the event. The sender identity contains only ID, display name, and role; recipients are represented by IDs. Handles are directory metadata and do not replace IDs in pointer events or the message contract.
 
 ## 5. HTTP actions
 
 ```text
+GET  /                         local-only worker inbox and operator traffic UI
+GET  /me                      authenticated seat identity
+POST /operator/session        exchange one-time local operator code
+GET  /operator/traffic        operator-only paginated pointer traffic
 POST /send
 GET  /seats
 GET  /inbox/{seat-id}?unread=1
@@ -155,11 +240,23 @@ POST /ack/{delivery-id}
 GET  /stream/{seat-id}
 ```
 
-The sender authenticates with a bearer token in the `Authorization: Bearer <token>` header. Tokens are never accepted in query strings. Every registered seat is assigned a stable ID, display name, role, and one bearer token. A seat may send only as itself and may read only its own inbox and stream. Display names are human-facing metadata; IDs are used by the protocol.
+On a loopback local-profile deployment, `GET /` serves the local Ovue browser page without authentication. Other configurations return `404` for `/`, including hosted deployments whose listener is behind a loopback proxy. The page provides two views: a worker can enter a seat token to see and refresh that seat's inbox, and the local operator can enter a one-time operator code to view recent traffic for all pointers and recipient states. Worker tokens remain in page memory only. The operator session uses a short-lived `HttpOnly`, `SameSite=Strict` cookie so it survives page refresh without exposing the credential to JavaScript. Neither raw credential is included in a URL, and the operator session is not accessible to page JavaScript. The page clears credential fields after submission and renders all pointer content as untrusted text.
 
-`GET /seats` is read-only and available to any authenticated seat. It returns every registered seat plus the reserved `operator` identity, with IDs, display names, and roles. The operator has ID `operator`, display name `Founder`, and role `operator`. The response never returns tokens or token hashes.
+The operator browser view is enabled only by `ovue serve --open-browser` with a loopback local profile. Before opening the page, the CLI creates a cryptographically random one-time code, displays it once in the operator-controlled terminal, and keeps only its hash in memory. The code expires after five minutes and can be exchanged once through `POST /operator/session` with a JSON `{ "code": "..." }` body for a random in-memory browser session. The service sets a same-origin `HttpOnly`, `SameSite=Strict` cookie for that session; it expires after eight hours or when the server stops. The code and session token are never written to disk, exposed to page JavaScript, included in a URL, or logged. `POST /operator/session` and `GET /operator/traffic` are unavailable unless this local operator-browser mode is enabled. Seat bearer tokens cannot authenticate to the operator endpoint.
 
-Agent-facing HTTP exposes only send, seat directory, inbox, acknowledgement, and stream actions. Administration is performed through a local command-line tool.
+`GET /operator/traffic` returns pointer delivery records newest first, using the same safe fields as the local traffic log and excluding token material. It accepts `limit` (default 100, maximum 1000) and an opaque `cursor`, and returns `{items, next_cursor}`. The browser displays 100 records at a time, lets the operator load older records, and offers an explicit refresh. Cursor pagination must not duplicate or skip records while new traffic is added. The operator view is read-only; seat creation, assignment, token rotation, and revocation remain local CLI actions. The operator shares a created seat's ID and one-time token with its assigned worker through a secure channel outside Ovue.
+
+The sender authenticates with a bearer token in the `Authorization: Bearer <token>` header. Tokens are never accepted in query strings. Every registered seat is assigned a stable ID, handle, display name, role, and one bearer token. A seat may send only as itself and may read only its own inbox and stream. Handles and display names are human-facing metadata; IDs are used by the protocol.
+
+`GET /me` is available to any authenticated seat. It returns only the caller's identity as `{ "id": "seat-id", "handle": "handle", "display_name": "Display name", "role": "role" }`. It never returns token material or other seats' data.
+
+Handles are unique within one Ovue deployment, compared case-insensitively, and normalized to lowercase. A handle contains 2–32 ASCII letters, digits, underscores, or hyphens; the first character must be a letter or digit. Handles are shown with an `@` prefix in user interfaces and stored without it. The local admin CLI can rename a handle. Renaming does not change the seat ID, token, or existing pointer deliveries. Handles are not credentials.
+
+`GET /seats` is read-only and available to any authenticated seat. It returns every registered seat plus the reserved `operator` identity, with IDs, handles, display names, and roles. The operator has ID `operator`, handle `operator`, display name `Operator`, and role `operator`. The response never returns tokens or token hashes. Agents resolve handles through this directory, then address pointers using seat IDs; `to`, inbox, stream, and acknowledgement contracts continue to use IDs.
+
+Agent-facing HTTP exposes send, current-seat identity, seat directory, inbox, acknowledgement, and stream actions. Administration is performed through a local command-line tool.
+
+The local browser page at `GET /` is a local-only interface, not an agent-facing endpoint. In worker mode it authenticates through `GET /me`, then displays the authenticated seat's display name, handle, role, ID, and inbox using safe text rendering. It supports refreshing and cursor pagination, with a toggle to include acknowledged deliveries. In operator mode it exchanges the one-time local code for an in-memory session, then reads the global traffic view. The operator view is read-only.
 
 The local admin CLI may send as `operator`; no agent seat may impersonate it. The operator inbox is readable and acknowledgeable through the local CLI.
 
@@ -199,6 +296,8 @@ not_found          404
 replay_unavailable 409
 payload_too_large  413
 rate_limited       429, with retry_after_seconds
+method_not_allowed 405
+server_busy        503, when the configured HTTP worker limit is reached
 ```
 
 `POST /ack/{delivery-id}` returns the same `404 not_found` response when the delivery does not exist or belongs to another seat. This prevents delivery-ID probing. `/inbox/{seat-id}` and `/stream/{seat-id}` return `403 forbidden` when another seat's ID is requested. An unavailable replay returns HTTP `409` with this body:
@@ -263,13 +362,13 @@ A send is one atomic transaction covering pointer creation, every recipient deli
 
 The database and traffic log are sensitive. On local installations, their parent directory is owned by the operator with mode `0700`, and files use mode `0600`. Backups and exports inherit the same access requirements. At-rest encryption is required when the underlying disk or backup location is not already encrypted.
 
-Every deployment must configure finite limits for pointer-row count and logical SQLite database size. The Founder will confirm the default values before the first run; until then, use `FOUNDER_CONFIRM` placeholders and require explicit finite values at startup. The service warns the operator at 80% of either logical limit. The logical database-size measure is `(page_count - freelist_count) * page_size`, using SQLite's `PRAGMA page_count`, `PRAGMA freelist_count`, and `PRAGMA page_size`.
+Every deployment must configure finite limits for pointer-row count and logical SQLite database size. The configuration example uses generic replacement markers until operators choose values; startup requires explicit finite values. The service warns the operator at 80% of either logical limit. The logical database-size measure is `(page_count - freelist_count) * page_size`, using SQLite's `PRAGMA page_count`, `PRAGMA freelist_count`, and `PRAGMA page_size`.
 
-Set `PRAGMA max_page_count` to cap the physical file at 115% of the logical byte limit, rounded up to a whole page. This 15% headroom is reserved for acknowledgements, seat revocation and token rotation, and purge operations; sends are rejected at the logical limit and cannot consume it. These recovery and control operations remain available while the logical send limit is full. Freed pages remain reusable after purge even when SQLite does not shrink the file.
+Set `PRAGMA max_page_count` on every SQLite connection that can write the shared database, including pointer and seat storage, to cap the physical file at 115% of the logical byte limit, rounded up to a whole page. This 15% headroom is reserved for acknowledgements, seat revocation and token rotation, and purge operations; sends are rejected at the logical limit and cannot consume it. These recovery and control operations remain available while the logical send limit is full. Freed pages remain reusable after purge even when SQLite does not shrink the file.
 
 The service checks both limits inside the send transaction, after `BEGIN IMMEDIATE` acquires SQLite's write lock. The transaction includes pointer creation, every recipient delivery, quota accounting, and per-recipient sequence assignment. This serializes concurrent send checks and preserves all-or-nothing pointer creation.
 
-The MVP includes a local admin purge command. It deletes a pointer only when every recipient delivery is acknowledged (`read`) and the pointer is older than the configured retention age. It must never delete a pointer with an unread delivery. The command also trims traffic-log rows older than a separately configured log-retention age. Both ages are configurable; use `FOUNDER_CONFIRM` until the Founder sets their defaults. These deletions free SQLite pages for reuse; an optional `VACUUM` may shrink the physical database file. Non-local deployment also requires protected backups before startup.
+The MVP includes a local admin purge command. It deletes a pointer only when every recipient delivery is acknowledged (`read`) and the pointer is older than the configured retention age. It must never delete a pointer with an unread delivery. The command also trims traffic-log rows older than a separately configured log-retention age. Both ages are configurable and must be finite. These deletions free SQLite pages for reuse; an optional `VACUUM` may shrink the physical database file. Non-local deployment also requires protected backups before startup.
 
 The traffic log records `created_at`, pointer ID, delivery ID, `from`, `to`, `ref`, description, kind, and state. It is structured JSON, one event per line. Fields are length-limited and safely escaped; control and directionality characters cannot create extra records or misleading rendering. The log reader renders fields safely and does not interpret URLs, titles, or descriptions as markup or commands. The audit-log reader is restricted to the operator.
 
@@ -281,8 +380,10 @@ Authentication failures are throttled per source and per seat identifier without
 
 The local admin CLI must be able to:
 
-- create a registered seat;
-- list seats and token status;
+- initialize a local-only configuration with `ovue init --local`;
+- create a registered seat with a unique handle;
+- list seats, handles, and token status;
+- rename a seat handle while keeping its ID stable;
 - revoke a token and close its streams;
 - rotate a seat token, immediately revoking the old token and showing the new token once;
 - send a pointer as `operator`;
@@ -293,7 +394,11 @@ The local admin CLI must be able to:
 
 Rotation also works for a seat whose previous token has been revoked: it issues a new usable token without changing the seat ID. The revoked token remains unusable.
 
-Token administration is an operator capability, not an agent capability. The seat ID `operator` is permanently reserved; seat creation, import, and rename reject it.
+Token and handle administration are operator capabilities, not agent capabilities. The seat ID and handle `operator` are permanently reserved; seat creation, import, and rename reject attempts to claim either reserved value.
+
+Only the operator creates registered seats. Each seat is assigned to a human or agent worker. After creation, the operator hands that worker the seat ID and its bearer token through a secure channel outside Ovue. The worker uses that seat identity for its Ovue requests. Seat handoff is credential provisioning, not pointer traffic.
+
+The operator can inspect every pointer and every recipient delivery state through the local traffic view. Ovue does not hide pointer fields from the operator. Traffic records do not contain bearer tokens, and Ovue does not fetch the content at a reference URL.
 
 The local admin CLI is restricted to the same operating-system user that owns the service data directory and uses `umask 077`. Raw tokens are displayed only when stdout is an operator-controlled terminal. The local OS user is a trusted boundary; compromise of that user means full service compromise. The terminal, including scrollback and any recording or screen-capture tools, is part of the trust boundary during one-time token display.
 
@@ -301,11 +406,17 @@ Non-local administration is out of scope for version one.
 
 ## 10. Limits and deployment
 
-Configure per-seat and global limits for send rate, recipient deliveries, request-body bytes, open streams, unread deliveries, replay size, and total storage. Initial defaults are 60 pointer submissions per minute per seat, 4 KiB per request body, 8 open streams per seat, 128 open streams globally, 100 unread deliveries per recipient, and 1,000 replayed events per connection. Limits count pointers, recipient deliveries, bytes, and failed validation attempts separately.
+Configure per-seat and global limits for send rate, invalid send attempts, recipient deliveries, request-body bytes, open streams, unread deliveries, replay size, total storage, and concurrent HTTP workers. Initial defaults are 60 send requests per minute per seat and source, 60 invalid send attempts per minute per seat and source, 4 KiB per request body, 8 open streams per seat, 128 open streams globally, 100 unread deliveries per recipient, 1,000 replayed events per connection, 160 concurrent HTTP workers, and a 10-second total request-read deadline. The worker limit must exceed the global stream limit so control requests retain capacity. Excess connections receive `503 server_busy` without creating a worker. The total deadline covers request headers and body; it does not reset when a peer sends occasional bytes. Every send attempt, including an invalid attempt, also counts toward the send-request limit.
 
 Each registered seat receives a nonzero reservation of at least 1 open stream and 10 unread deliveries. Global stream and unread limits must be at least the number of registered seats multiplied by those reservations; otherwise seat creation or capacity reduction is rejected. A seat may use its reservation and only unused capacity beyond all reservations.
 
-The global pointer-row and SQLite file-size limits must be finite and configurable. The Founder will confirm the default values before the first run; until then, use `FOUNDER_CONFIRM` placeholders and require explicit finite values at startup. The service warns the operator at 80% of either limit. It checks capacity inside the `BEGIN IMMEDIATE` send transaction, serializing concurrent sends. The MVP has no per-seat storage quota; the operator warning and seat revocation are the controls. A per-sender cap may be added later.
+The global pointer-row and SQLite file-size limits must be finite and configurable. The configuration example uses generic replacement markers; startup requires explicit finite values. The service warns the operator at 80% of either limit. It checks capacity inside the `BEGIN IMMEDIATE` send transaction, serializing concurrent sends. The MVP has no per-seat storage quota; the operator warning and seat revocation are the controls. A per-sender cap may be added later.
+
+### Local first-run setup
+
+`ovue init --local` creates a local-only configuration at `~/.config/ovue/config.toml`, with explicit finite development values and the default data directory written into the file. The generated listener binds only to `127.0.0.1` and requires no TLS files. The command accepts repeated `--allow-host <hostname>` options to populate the exact reference-host allowlist, for example `ovue init --local --allow-host app.notion.com --allow-host work.example.org`. Each value must pass the hostname rules in section 4; accepted hostnames are lowercased and duplicate entries collapse to one entry. If the option is omitted, the allowlist is empty. The command must not enable provider hosts by default. Invalid hostnames are rejected before creating the configuration file. The generated file carries a marker identifying it as a local profile; startup rejects that profile if configured to bind to a non-loopback address. Hosted deployments still require their own finite limits and TLS configuration.
+
+Initialization must not overwrite an existing configuration. On success, it prints the next command, `ovue serve`; the developer can create a seat with the existing local admin command. This path must allow a developer to start Ovue without copying an example file, editing deployment placeholders, or supplying `--config`.
 
 When a recipient already has 100 unread deliveries, a pointer addressed to that recipient is rejected with HTTP `400` and an issue such as `{ "path": ["to", 0], "code": "recipient_inbox_full", "message": "The recipient's inbox is full" }`. This is a temporary condition that clears when the recipient acknowledges a pointer and an unread slot becomes available. It is not a rate-limit response. The unread-capacity check runs inside the same `BEGIN IMMEDIATE` transaction as storage checks and pointer creation. A multi-recipient pointer is all-or-nothing: if any recipient inbox is full, no delivery is created. Purge eligibility and traffic-log retention are defined in section 8.
 
@@ -328,7 +439,7 @@ Any non-local deployment requires HTTPS and rejects startup if a cleartext liste
 13. Confirm more than 10 recipients is rejected and duplicate IDs produce one delivery.
 14. Confirm a first connection without `Last-Event-ID` receives the unread backlog.
 15. Confirm two open connections for one seat both receive every event.
-16. Confirm `GET /seats` returns every registered seat plus `operator`, with no token or token-hash data.
+16. Confirm `GET /seats` returns every registered seat plus `operator`, including IDs, handles, display names, and roles, with no token or token-hash data.
 17. Confirm a multi-field validation failure returns every issue and no submitted value.
 18. Confirm unread inbox requests return only deliveries with state `unread`.
 19. Acknowledge one delivery twice and confirm the second acknowledgement is harmless.
@@ -374,6 +485,31 @@ Any non-local deployment requires HTTPS and rejects startup if a cleartext liste
 59. Complete processing durably, interrupt before acknowledgement, reconnect, and confirm acknowledgement can be retried without repeating the action. Verify compliant clients do not acknowledge before terminal processing.
 60. Confirm an SSE event has one single-line JSON `data:` payload and the per-recipient sequence in `id:`, and a client that cannot stream can recover by polling on startup.
 61. Fill the logical database limit, then acknowledge a delivery, revoke or rotate a seat token, and run purge; confirm each operation succeeds within the reserved physical headroom and the SQLite file remains within `max_page_count`.
+62. Confirm `GET /seats` returns each seat's handle without returning token data, and handle lookup is case-insensitive.
+63. Attempt to create two seats with handles that differ only by letter case; confirm the duplicate is rejected.
+64. Rename a seat handle and confirm the seat ID, token, and existing pointer deliveries remain unchanged while the directory returns the new handle.
+65. Attempt to create or rename a seat to the reserved handle `operator`; confirm the operation is rejected.
+66. Open slow partial HTTP requests until the configured worker limit is reached; confirm excess requests receive `503 server_busy`, slow requests close at the total header/body deadline, and the workers become available again.
+67. Reach the logical SQLite limit, then perform acknowledgement, seat revocation and rotation, and purge through their separate connections; confirm each succeeds and every writer connection observes the same `max_page_count`.
+68. Confirm `ovue --help` and `python -m ovue --help` expose the same command tree, and missing required configuration prevents HTTP startup.
+69. Run `ovue init --local --allow-host app.notion.com --allow-host work.example.org`; confirm it creates a finite loopback-only config with both exact hosts, no TLS requirement or replacement markers, then confirm `ovue serve` uses it without `--config`.
+70. Run `ovue init --local` without `--allow-host`; confirm the generated allowlist is empty and no provider host is enabled by default.
+71. Supply an invalid `--allow-host` value; confirm initialization fails and does not create the config file.
+72. Run `ovue init --local` when the default config already exists; confirm it reports the conflict and leaves the existing file unchanged.
+73. Supply the same host more than once, including mixed case; confirm the generated allowlist contains the lowercased host once.
+74. Change the generated local profile to a non-loopback listener; confirm the local-profile marker causes startup to reject it.
+75. On a loopback local-profile deployment, request `/` without credentials; confirm it serves the worker and operator browser views without pointer data, with no-store caching and a same-origin-only CSP. Confirm user-provided pointer fields are rendered as text.
+76. On any configuration without the local-profile marker, confirm `GET /` returns `404`. Run `ovue serve --open-browser` with a loopback local profile and confirm it opens the local browser UI; reject this option otherwise.
+77. Confirm `GET /me` returns only the authenticated seat's ID, handle, display name, and role, with no token material or other seats' data. Submit a valid token in worker mode and confirm the page identifies that seat and loads only its inbox; submit an invalid token and confirm it reports authentication failure without retaining the input.
+78. Confirm only the local operator can create seats. Seat creation shows the seat ID and token once to the operator; the assigned worker can use the handed-off credentials, and an agent seat cannot create or provision another seat.
+79. Confirm the operator traffic view includes every pointer and each recipient's delivery state, while excluding bearer tokens and content fetched from reference URLs.
+80. Confirm `ovue serve --open-browser` generates an operator code only for an operator-controlled terminal and loopback local profile; the code is single-use, expires after five minutes, and is not persisted or logged.
+81. Confirm the operator browser session is held only in server memory, uses an eight-hour `HttpOnly`, `SameSite=Strict` cookie inaccessible to page JavaScript, expires on server shutdown, and cannot be authenticated with a seat token.
+82. Confirm `POST /operator/session` and `GET /operator/traffic` are unavailable when operator-browser mode is disabled or the server is not using a loopback local profile.
+83. Confirm the operator browser view returns pointer traffic and per-recipient states without token material, and renders submitted pointer fields as text.
+84. Confirm the worker browser view lists only the authenticated worker's inbox, supports refreshing and pagination, can include acknowledged deliveries, and acknowledges only through that worker's authenticated endpoint.
+85. Confirm seat creation, token rotation, and revocation remain CLI-only; a created seat's ID and one-time token are shown only to the operator-controlled terminal for handoff outside Ovue.
+86. Confirm operator traffic cursors let the browser view every retained traffic record without duplicates or skipped records, even when new records arrive between page requests.
 
 Receiver checks 50 and 56 require a compliant receiving client; they cannot be demonstrated by the acknowledgement endpoint alone.
 
@@ -390,11 +526,12 @@ Receiver checks 50 and 56 require a compliant receiving client; they cannot be d
 - Recipient IDs in message events and the authenticated seat directory are intentionally visible workflow metadata.
 - The MVP has no per-seat storage quota. The 80% warning and seat revocation are the controls; a per-sender cap may be added later.
 - Traffic-log rows have a separate configurable retention age and are trimmed by the purge command.
+- Hosted TLS termination, proxy behavior, protected-backup setup and restore, and agent-tool wake-up have not been exercised; run those deployment checks before exposing a public instance.
 - Accepted MVP security posture: the service trusts its owning OS user; URL paths are public data; recipient lists and the seat directory are visible to authenticated seats; and free-text descriptions are handled as untrusted content through safe rendering and independent receiver checks.
 
 ## 13. Development and reporting
 
-Keep related domain code together and tests alongside the code they exercise. Split responsibilities into focused files and avoid God files. Include line-by-line explanatory comments. Implement and review one piece at a time.
+Keep related domain code together and tests alongside the code they exercise. Split responsibilities into focused files and avoid God files. Use docstrings to explain purpose and contract; add inline comments only where the docstring leaves an important gap. Implement and review one piece at a time.
 
 On delivery, report what works, what was tested, and what could not be tested. Distinguish documented requirements from implemented or verified behavior.
 

@@ -1,5 +1,8 @@
 # Contributing to Ovue
 
+Author: Okoro (AI Agent)
+Human Driver: Jonathan
+
 This guide describes how to make and review changes to Ovue.
 
 ## Read first
@@ -8,18 +11,19 @@ Before changing behavior, read:
 
 - [README.md](README.md) for the project overview and setup;
 - [spec.md](spec.md) for the service contract and required behavior;
+- [testing_strategy.md](testing_strategy.md) for test case selection and coverage expectations;
 - [configuration.md](configuration.md) for the proposed configuration shape and limits;
 - the code and colocated tests for the part you are changing.
 
-If a change affects the pointer contract, delivery behavior, security rules, or configuration requirements, update the specification in the same change. The specification describes required behavior; it does not prove that the implementation meets it.
+For any behavior change, update the authoritative specification and its acceptance criteria before changing implementation code. Then implement and test against that contract, and keep the specification, tests, and implementation together in the same focused change. The specification describes required behavior; it does not prove that the implementation meets it.
 
 ## Work in focused slices
 
 - Make one focused change per branch. Each change should have one clear outcome and be independently reviewable and revertible.
-- Work vertically through the affected behavior: define or update the requirement, implement it, add or update colocated tests, and verify the slice before expanding scope.
+- Work vertically through the affected behavior in this order: update the requirement and acceptance criteria first, implement the specified behavior, add or update colocated tests, then verify the slice before expanding scope.
 - Keep related domain code together. Split responsibilities into focused modules and avoid God files.
 - Place tests beside the code they exercise.
-- Include line-by-line explanatory comments when adding code, as required for this project is a simple way for developers to understand how python works.
+- Use docstrings to explain a module, class, or function's purpose and contract. Add inline comments only when the code and its docstrings leave an important step or rationale unclear; do not repeat self-explanatory lines comment by comment.
 
 ## Preserve Ovue's boundaries
 
@@ -31,19 +35,21 @@ If a change affects the pointer contract, delivery behavior, security rules, or 
 
 ## Set up and verify
 
-Use Python 3.11 or newer. Install the development tools declared in `pyproject.toml` with [uv](https://docs.astral.sh/uv/):
+Use Python 3.11 or newer. Create a virtual environment and install the development tools declared in `pyproject.toml`:
 
 ```sh
-uv sync --group dev
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --editable '.[dev]'
 ```
 
 Run the checks relevant to your change:
 
 ```sh
-uv run ruff check .
-uv run ruff format --check .
-uv run mypy
-uv run pytest
+ruff check .
+ruff format --check .
+mypy
+python -m pytest
 ```
 
 Add or update tests for changed behavior. Report which checks you ran and any that remain unrun; do not describe an unrun check as passing.

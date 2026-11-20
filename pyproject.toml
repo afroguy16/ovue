@@ -1,14 +1,21 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "ovue"
 version = "0.1.0"
-description = "A provider-agnostic message channel for agent seats."
+description = "A provider-agnostic message-pointer service for agent seats."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "mypy>=1.13",
+    "pytest>=8.0",
+    "ruff>=0.8",
+]
 
 [project.scripts]
 ovue = "ovue.cli:main"
@@ -16,13 +23,6 @@ ovue = "ovue.cli:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["ovue", "ovue.*"]
-
-[dependency-groups]
-dev = [
-    "mypy>=1.13",
-    "pytest>=8.0",
-    "ruff>=0.8",
-]
 
 [tool.pytest.ini_options]
 testpaths = ["ovue"]
